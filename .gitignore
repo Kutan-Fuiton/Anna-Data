@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Datasets
+Food_Dataset/
+
+# Virtual environment
+env/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# # Model files (large)
+# *.pt
+# !model/food_detection_model.pt
+
+# Training artifacts (regenerable)
+model/data/
+# model/runs/detect/predict/
+# model/runs/detect/val/
+
+# Cache
+*.cache
+.cache/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Test outputs
+# model/predictions/

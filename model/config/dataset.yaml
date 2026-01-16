@@ -1,0 +1,29 @@
+# YOLO Dataset Configuration for Food Detection
+
+# Paths (relative to this file or absolute)
+path: C:/Users/Subarno Chakraborty/Coding/Project/mess-o-meter-model/model/data  # dataset root dir
+train: train/images  # train images
+val: val/images  # val images
+
+# Number of classes
+nc: 17
+
+# Class names
+names:
+  0: Aalu Ki Sabji
+  1: Chana Dal
+  2: Chhaina
+  3: Chhole
+  4: Curry
+  5: Dahi
+  6: Dal
+  7: Fried Rice
+  8: Gulab Jamun
+  9: Mix Veg
+  10: Paneer
+  11: Plate
+  12: Puri
+  13: Rice
+  14: Roti
+  15: Salad
+  16: Zeera Aalu
