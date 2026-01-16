@@ -17,6 +17,7 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent / "model"))
 
 from model.inference import FoodDetector
+from gemini_service import gemini_service
 
 app = FastAPI(
     title="Mess-O-Meter Food Waste Analysis API",
@@ -234,6 +235,10 @@ async def analyze_food_waste(image: UploadFile = File(...)):
         user_insight = generate_user_insight(waste_analysis, food_counts)
         admin_insight = generate_admin_insight(waste_analysis, food_counts)
         
+        # Generate AI-powered insights using Gemini (if configured)
+        ai_user_insight = await gemini_service.generate_user_insight(waste_analysis, food_counts)
+        ai_admin_insight = await gemini_service.generate_admin_insight(waste_analysis, food_counts)
+        
         return JSONResponse({
             "success": True,
             "timestamp": datetime.now().isoformat(),
@@ -244,8 +249,11 @@ async def analyze_food_waste(image: UploadFile = File(...)):
             "food_summary": food_counts,
             "food_details": food_details,
             "waste_analysis": waste_analysis,
-            "user_insight": user_insight,
-            "admin_insight": admin_insight
+            "user_insight": ai_user_insight if ai_user_insight else user_insight,
+            "admin_insight": {
+                **admin_insight,
+                "ai_summary": ai_admin_insight
+            }
         })
         
     except HTTPException:
