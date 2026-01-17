@@ -369,3 +369,226 @@ export async function getAllMealIntents(startDate: Date, endDate: Date): Promise
         return [];
     }
 }
+
+// ============== QR Attendance Operations ==============
+
+export interface MealAttendance {
+    id?: string;
+    userId: string;
+    userName?: string;
+    userEmail?: string;
+    date: Date;
+    mealType: 'breakfast' | 'lunch' | 'dinner';
+    scannedAt: Date;
+    scannedBy: string; // Admin UID who scanned
+}
+
+export interface QRPayload {
+    uid: string;
+    meal: 'breakfast' | 'lunch' | 'dinner';
+    date: string; // ISO date string (YYYY-MM-DD)
+    ts: number; // Timestamp when QR was generated
+    hash: string; // Simple checksum for validation
+}
+
+/**
+ * Generate a simple hash for QR validation
+ */
+export function generateQRHash(uid: string, meal: string, date: string, ts: number): string {
+    const data = `${uid}-${meal}-${date}-${ts}`;
+    let hash = 0;
+    for (let i = 0; i < data.length; i++) {
+        const char = data.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(36);
+}
+
+/**
+ * Validate QR hash
+ */
+export function validateQRHash(payload: QRPayload): boolean {
+    const expectedHash = generateQRHash(payload.uid, payload.meal, payload.date, payload.ts);
+    return payload.hash === expectedHash;
+}
+
+/**
+ * Check if a student has already been marked for a meal today
+ */
+export async function checkMealAttendance(
+    userId: string,
+    mealType: 'breakfast' | 'lunch' | 'dinner',
+    date: Date
+): Promise<boolean> {
+    try {
+        const dateStr = date.toISOString().split('T')[0];
+        const docId = `${userId}_${mealType}_${dateStr}`;
+
+        const docRef = doc(db, 'mealAttendance', docId);
+        const docSnap = await getDoc(docRef);
+
+        return docSnap.exists();
+    } catch (error) {
+        console.error('Error checking meal attendance:', error);
+        return false;
+    }
+}
+
+/**
+ * Check if student had intent to eat this meal
+ */
+export async function checkMealIntent(
+    userId: string,
+    mealType: 'breakfast' | 'lunch' | 'dinner',
+    date: Date
+): Promise<boolean> {
+    try {
+        const dateStr = date.toISOString().split('T')[0];
+        const docId = `${userId}_${dateStr}`;
+
+        const docRef = doc(db, 'mealIntents', docId);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            return data.meals?.[mealType] === true;
+        }
+
+        return false;
+    } catch (error) {
+        console.error('Error checking meal intent:', error);
+        return false;
+    }
+}
+
+/**
+ * Mark a student as attended for a meal
+ * Returns error message if duplicate or other issue
+ */
+export async function markMealAttendance(
+    userId: string,
+    userName: string | undefined,
+    userEmail: string | undefined,
+    mealType: 'breakfast' | 'lunch' | 'dinner',
+    date: Date,
+    scannedBy: string
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const dateStr = date.toISOString().split('T')[0];
+        const docId = `${userId}_${mealType}_${dateStr}`;
+
+        // Check if already scanned
+        const existing = await checkMealAttendance(userId, mealType, date);
+        if (existing) {
+            return { success: false, error: 'Already checked in for this meal' };
+        }
+
+        // DEMO MODE: Skip intent check - in production, uncomment this:
+        // const hadIntent = await checkMealIntent(userId, mealType, date);
+        // if (!hadIntent) {
+        //     return { success: false, error: 'Student did not mark intent to eat this meal' };
+        // }
+
+
+        // Record attendance
+        await setDoc(doc(db, 'mealAttendance', docId), {
+            userId,
+            userName: userName || 'Unknown',
+            userEmail: userEmail || '',
+            date: Timestamp.fromDate(date),
+            mealType,
+            scannedAt: serverTimestamp(),
+            scannedBy,
+        });
+
+        // Award bonus points for actually showing up
+        await addUserPoints(userId, 5, 'meal_attendance');
+
+        return { success: true };
+    } catch (error) {
+        console.error('Error marking meal attendance:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to record attendance';
+        return { success: false, error: errorMessage };
+    }
+}
+
+/**
+ * Get today's attendance for a specific meal (admin view)
+ */
+export async function getTodayAttendance(
+    mealType?: 'breakfast' | 'lunch' | 'dinner'
+): Promise<MealAttendance[]> {
+    try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        let q;
+        if (mealType) {
+            q = query(
+                collection(db, 'mealAttendance'),
+                where('date', '>=', Timestamp.fromDate(today)),
+                where('date', '<', Timestamp.fromDate(tomorrow)),
+                where('mealType', '==', mealType),
+                orderBy('date', 'desc'),
+                orderBy('scannedAt', 'desc'),
+                limit(100)
+            );
+        } else {
+            q = query(
+                collection(db, 'mealAttendance'),
+                where('date', '>=', Timestamp.fromDate(today)),
+                where('date', '<', Timestamp.fromDate(tomorrow)),
+                orderBy('date', 'desc'),
+                orderBy('scannedAt', 'desc'),
+                limit(100)
+            );
+        }
+
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            date: doc.data().date?.toDate(),
+            scannedAt: doc.data().scannedAt?.toDate(),
+        })) as MealAttendance[];
+    } catch (error) {
+        console.error('Error fetching today attendance:', error);
+        return [];
+    }
+}
+
+/**
+ * Get attendance stats for today
+ */
+export async function getTodayAttendanceStats(): Promise<{
+    breakfast: number;
+    lunch: number;
+    dinner: number;
+    total: number;
+}> {
+    try {
+        const attendance = await getTodayAttendance();
+
+        const stats = {
+            breakfast: 0,
+            lunch: 0,
+            dinner: 0,
+            total: attendance.length,
+        };
+
+        attendance.forEach(a => {
+            if (a.mealType in stats) {
+                stats[a.mealType]++;
+            }
+        });
+
+        return stats;
+    } catch (error) {
+        console.error('Error fetching attendance stats:', error);
+        return { breakfast: 0, lunch: 0, dinner: 0, total: 0 };
+    }
+}
+

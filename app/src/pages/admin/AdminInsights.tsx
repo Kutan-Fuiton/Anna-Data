@@ -1,7 +1,12 @@
-import { useState } from 'react';
-import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-
-type TimeFilter = 'week' | 'month' | 'quarter';
+import { useState, useEffect } from 'react';
+import { 
+    XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+    LineChart, Line, PieChart, Pie, Cell, BarChart, Bar, Legend 
+} from 'recharts';
+import { 
+    getAnalytics, getLastUpdatedTimestamp, 
+    type TimeRange, type AnalyticsSummary, type WasteLevel 
+} from '../../services/analyticsService';
 
 interface AIInsight {
     id: string;
@@ -12,20 +17,24 @@ interface AIInsight {
     trend?: 'up' | 'down' | 'stable';
 }
 
-interface WastageTrend {
-    date: string;
-    vegetables: number;
-    grains: number;
-    dairy: number;
-    proteins: number;
-}
-
 export default function AdminInsights() {
-    const [timeFilter, setTimeFilter] = useState<TimeFilter>('week');
+    const [timeRange, setTimeRange] = useState<TimeRange>('weekly');
     const [activeSection, setActiveSection] = useState<'ai' | 'wastage'>('ai');
+    const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+    const [lastGenerated, setLastGenerated] = useState<string>('');
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Last updated timestamp
-    const lastGenerated = 'January 15, 2026 at 11:30 PM';
+    // Load analytics data when time range changes
+    useEffect(() => {
+        setIsLoading(true);
+        // Simulate API delay
+        const timer = setTimeout(() => {
+            setAnalytics(getAnalytics(timeRange));
+            setLastGenerated(getLastUpdatedTimestamp());
+            setIsLoading(false);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [timeRange]);
 
     // AI-Generated Insights (simulated cached data from Gemini)
     const aiInsights: AIInsight[] = [
@@ -79,20 +88,15 @@ export default function AdminInsights() {
         },
     ];
 
-    // Wastage trend data (aggregated, no individual data)
-    const wastageTrendData: WastageTrend[] = [
-        { date: 'Week 1', vegetables: 42, grains: 28, dairy: 15, proteins: 12 },
-        { date: 'Week 2', vegetables: 38, grains: 32, dairy: 18, proteins: 10 },
-        { date: 'Week 3', vegetables: 45, grains: 25, dairy: 14, proteins: 15 },
-        { date: 'Week 4', vegetables: 35, grains: 30, dairy: 20, proteins: 11 },
-    ];
+    // Color schemes
+    const WASTE_LEVEL_COLORS: Record<WasteLevel, string> = {
+        NONE: '#22c55e',   // green
+        LOW: '#84cc16',    // lime
+        MEDIUM: '#f59e0b', // amber
+        HIGH: '#ef4444',   // red
+    };
 
-    const categoryWastage = [
-        { category: 'Sabzi / Vegetables', amount: 38, change: -8, examples: 'Mixed Veg, Bhindi, Baingan' },
-        { category: 'Dal / Lentils', amount: 22, change: -12, examples: 'Dal Tadka, Chana Dal, Rajma' },
-        { category: 'Rice / Grains', amount: 28, change: +5, examples: 'Jeera Rice, Pulao, Plain Rice' },
-        { category: 'Roti / Breads', amount: 12, change: -15, examples: 'Chapati, Paratha, Naan' },
-    ];
+    const CATEGORY_COLORS = ['#22c55e', '#f59e0b', '#3b82f6', '#ef4444'];
 
     const getInsightIcon = (type: AIInsight['type']) => {
         switch (type) {
@@ -110,6 +114,23 @@ export default function AdminInsights() {
         }
     };
 
+    // Prepare pie chart data from waste level distribution
+    const getPieChartData = () => {
+        if (!analytics) return [];
+        return Object.entries(analytics.wasteLevelDistribution).map(([level, count]) => ({
+            name: level,
+            value: count,
+            color: WASTE_LEVEL_COLORS[level as WasteLevel],
+        }));
+    };
+
+    // Time range labels for display
+    const timeRangeLabels: Record<TimeRange, string> = {
+        daily: 'Today',
+        weekly: 'This Week',
+        monthly: 'This Month',
+    };
+
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
             {/* Header */}
@@ -123,7 +144,13 @@ export default function AdminInsights() {
                         <p className="text-xs text-gray-400">AI Analysis last generated</p>
                         <p className="text-sm text-gray-600 font-medium">{lastGenerated}</p>
                     </div>
-                    <button className="flex items-center gap-2 px-4 py-2 bg-[#0d2137] text-white text-sm font-medium hover:bg-[#152d4a] transition-colors">
+                    <button 
+                        onClick={() => {
+                            setAnalytics(getAnalytics(timeRange));
+                            setLastGenerated(getLastUpdatedTimestamp());
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-[#0d2137] text-white text-sm font-medium hover:bg-[#152d4a] transition-colors"
+                    >
                         <span>🔄</span> Regenerate
                     </button>
                 </div>
@@ -147,7 +174,7 @@ export default function AdminInsights() {
                         : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
                         }`}
                 >
-                    📊 Wastage Trends (Experimental)
+                    📊 Wastage Trends
                 </button>
             </div>
 
@@ -156,13 +183,15 @@ export default function AdminInsights() {
                 <div className="space-y-6">
                     {/* Time Filter */}
                     <div className="flex items-center justify-between">
-                        <h2 className="text-lg font-semibold text-gray-900">Weekly Analysis Summary</h2>
+                        <h2 className="text-lg font-semibold text-gray-900">
+                            {timeRange === 'daily' ? 'Daily' : timeRange === 'weekly' ? 'Weekly' : 'Monthly'} Analysis Summary
+                        </h2>
                         <div className="flex border border-gray-200 bg-white">
-                            {(['week', 'month', 'quarter'] as TimeFilter[]).map((filter) => (
+                            {(['daily', 'weekly', 'monthly'] as TimeRange[]).map((filter) => (
                                 <button
                                     key={filter}
-                                    onClick={() => setTimeFilter(filter)}
-                                    className={`px-4 py-1.5 text-sm font-medium capitalize transition-colors ${timeFilter === filter
+                                    onClick={() => setTimeRange(filter)}
+                                    className={`px-4 py-1.5 text-sm font-medium capitalize transition-colors ${timeRange === filter
                                         ? 'bg-gray-100 text-gray-900'
                                         : 'text-gray-500 hover:text-gray-700'
                                         }`}
@@ -178,7 +207,7 @@ export default function AdminInsights() {
                         <span className="text-2xl">🤖</span>
                         <div>
                             <p className="font-medium text-gray-900">Powered by Gemini AI</p>
-                            <p className="text-sm text-gray-500">Analysis is cached and regenerated weekly. Shows relative trends, not absolute predictions.</p>
+                            <p className="text-sm text-gray-500">Analysis is cached and regenerated {timeRange}. Shows relative trends, not absolute predictions.</p>
                         </div>
                     </div>
 
@@ -187,7 +216,7 @@ export default function AdminInsights() {
                         {/* Top Issues */}
                         <div className="bg-white border border-gray-200 p-5">
                             <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                <span className="text-red-500">⚠️</span> Top Issues This Week
+                                <span className="text-red-500">⚠️</span> Top Issues {timeRangeLabels[timeRange]}
                             </h3>
                             <div className="space-y-3">
                                 {aiInsights.filter(i => i.type === 'issue').map((insight) => {
@@ -250,77 +279,156 @@ export default function AdminInsights() {
             {/* Wastage Trends Section */}
             {activeSection === 'wastage' && (
                 <div className="space-y-6">
-                    {/* Disclaimer */}
-                    <div className="bg-amber-50 border border-amber-200 p-4 flex items-start gap-3">
-                        <span className="text-xl">⚠️</span>
-                        <div>
-                            <p className="font-medium text-amber-800">Experimental Feature</p>
-                            <p className="text-sm text-amber-700">This data shows aggregated wastage trends only. No individual student data or images are used. Results are for relative comparison, not absolute measurement.</p>
+                    {/* Time Filter for Wastage */}
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-semibold text-gray-900">Wastage Analytics</h2>
+                        <div className="flex border border-gray-200 bg-white">
+                            {(['daily', 'weekly', 'monthly'] as TimeRange[]).map((filter) => (
+                                <button
+                                    key={filter}
+                                    onClick={() => setTimeRange(filter)}
+                                    className={`px-4 py-1.5 text-sm font-medium capitalize transition-colors ${timeRange === filter
+                                        ? 'bg-gray-100 text-gray-900'
+                                        : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                >
+                                    {filter}
+                                </button>
+                            ))}
                         </div>
                     </div>
 
-                    {/* Charts */}
-                    <div className="grid grid-cols-3 gap-4">
-                        {/* Trend Chart */}
-                        <div className="col-span-2 bg-white border border-gray-200 p-5">
-                            <h3 className="font-semibold text-gray-900 mb-4">Wastage Trend by Category (kg, aggregated)</h3>
-                            <ResponsiveContainer width="100%" height={280}>
-                                <LineChart data={wastageTrendData}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
-                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
-                                    <Tooltip contentStyle={{ border: '1px solid #e5e7eb', borderRadius: 0, boxShadow: 'none' }} />
-                                    <Line type="monotone" dataKey="vegetables" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} name="Vegetables" />
-                                    <Line type="monotone" dataKey="grains" stroke="#f59e0b" strokeWidth={2} dot={{ r: 4 }} name="Grains" />
-                                    <Line type="monotone" dataKey="dairy" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} name="Dairy" />
-                                    <Line type="monotone" dataKey="proteins" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} name="Proteins" />
-                                </LineChart>
-                            </ResponsiveContainer>
+                    {/* Summary Statistics Cards */}
+                    {isLoading ? (
+                        <div className="grid grid-cols-4 gap-4">
+                            {[1, 2, 3, 4].map(i => (
+                                <div key={i} className="bg-white border border-gray-200 p-5 animate-pulse">
+                                    <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
+                                    <div className="h-8 bg-gray-200 rounded w-16"></div>
+                                </div>
+                            ))}
                         </div>
-
-                        {/* Category Breakdown */}
-                        <div className="bg-white border border-gray-200 p-5">
-                            <h3 className="font-semibold text-gray-900 mb-4">This Week's Breakdown</h3>
-                            <div className="space-y-4">
-                                {categoryWastage.map((item) => (
-                                    <div key={item.category}>
-                                        <div className="flex justify-between text-sm mb-1">
-                                            <span className="text-gray-700 font-medium">{item.category}</span>
-                                            <span className={`font-semibold ${item.change < 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                                {item.change > 0 ? '+' : ''}{item.change}%
-                                            </span>
-                                        </div>
-                                        <div className="h-2 bg-gray-100 mb-1">
-                                            <div
-                                                className="h-2 bg-teal-600 transition-all"
-                                                style={{ width: `${item.amount}%` }}
-                                            />
-                                        </div>
-                                        <p className="text-xs text-gray-400">{item.examples}</p>
-                                    </div>
-                                ))}
+                    ) : analytics && (
+                        <div className="grid grid-cols-4 gap-4">
+                            <div className="bg-white border border-gray-200 p-5">
+                                <p className="text-sm text-gray-500 mb-1">Total Analyses</p>
+                                <p className="text-2xl font-bold text-gray-900">{analytics.totalAnalyses.toLocaleString()}</p>
+                                <p className={`text-xs mt-1 ${analytics.comparisonToPrevious.analysisCountChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {analytics.comparisonToPrevious.analysisCountChange >= 0 ? '+' : ''}{analytics.comparisonToPrevious.analysisCountChange} vs previous
+                                </p>
+                            </div>
+                            <div className="bg-white border border-gray-200 p-5">
+                                <p className="text-sm text-gray-500 mb-1">Avg Waste %</p>
+                                <p className="text-2xl font-bold text-amber-600">{analytics.averageWastePercent}%</p>
+                                <p className={`text-xs mt-1 ${analytics.comparisonToPrevious.wasteChange <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {analytics.comparisonToPrevious.wasteChange >= 0 ? '+' : ''}{analytics.comparisonToPrevious.wasteChange}% vs previous
+                                </p>
+                            </div>
+                            <div className="bg-white border border-gray-200 p-5">
+                                <p className="text-sm text-gray-500 mb-1">Most Wasted Item</p>
+                                <p className="text-2xl font-bold text-gray-900">{analytics.topWastedItems[0]?.item || 'N/A'}</p>
+                                <p className="text-xs text-gray-400 mt-1">{analytics.topWastedItems[0]?.count || 0} instances</p>
+                            </div>
+                            <div className="bg-white border border-gray-200 p-5">
+                                <p className="text-sm text-gray-500 mb-1">Clean Plates</p>
+                                <p className="text-2xl font-bold text-green-600">{analytics.wasteLevelDistribution.NONE}</p>
+                                <p className="text-xs text-gray-400 mt-1">Zero waste analyses</p>
                             </div>
                         </div>
-                    </div>
+                    )}
 
-                    {/* Recommendations */}
-                    <div className="bg-white border border-gray-200 p-5">
-                        <h3 className="font-semibold text-gray-900 mb-4">AI Recommendations for Reducing Wastage</h3>
+                    {/* Charts Grid */}
+                    {!isLoading && analytics && (
                         <div className="grid grid-cols-3 gap-4">
-                            <div className="p-4 bg-teal-50 border border-teal-200">
-                                <p className="font-medium text-teal-800 mb-2">📉 Reduce Portion Sizes</p>
-                                <p className="text-sm text-teal-700">Mixed Vegetable Curry shows 40% wastage. Consider smaller default portions with refill option.</p>
+                            {/* Line Chart - Trend over time */}
+                            <div className="col-span-2 bg-white border border-gray-200 p-5">
+                                <h3 className="font-semibold text-gray-900 mb-4">Wastage Trend by Category (kg)</h3>
+                                <ResponsiveContainer width="100%" height={280}>
+                                    <LineChart data={analytics.trendData}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
+                                        <Tooltip contentStyle={{ border: '1px solid #e5e7eb', borderRadius: 0, boxShadow: 'none' }} />
+                                        <Legend />
+                                        <Line type="monotone" dataKey="vegetables" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} name="Vegetables" />
+                                        <Line type="monotone" dataKey="grains" stroke="#f59e0b" strokeWidth={2} dot={{ r: 4 }} name="Grains" />
+                                        <Line type="monotone" dataKey="dairy" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} name="Dairy" />
+                                        <Line type="monotone" dataKey="proteins" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} name="Proteins" />
+                                    </LineChart>
+                                </ResponsiveContainer>
                             </div>
-                            <div className="p-4 bg-blue-50 border border-blue-200">
-                                <p className="font-medium text-blue-800 mb-2">🕐 Adjust Preparation Timing</p>
-                                <p className="text-sm text-blue-700">Rice wastage peaks at dinner. Prepare 15% less for weekday dinners based on intent data.</p>
-                            </div>
-                            <div className="p-4 bg-purple-50 border border-purple-200">
-                                <p className="font-medium text-purple-800 mb-2">📋 Menu Optimization</p>
-                                <p className="text-sm text-purple-700">Rotate unpopular sabzis less frequently. Baingan Bharta has 3x higher wastage than average.</p>
+
+                            {/* Pie Chart - Waste Level Distribution */}
+                            <div className="bg-white border border-gray-200 p-5">
+                                <h3 className="font-semibold text-gray-900 mb-4">Waste Level Distribution</h3>
+                                <ResponsiveContainer width="100%" height={220}>
+                                    <PieChart>
+                                        <Pie
+                                            data={getPieChartData()}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={50}
+                                            outerRadius={80}
+                                            paddingAngle={2}
+                                            dataKey="value"
+                                        >
+                                            {getPieChartData().map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={entry.color} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                                <div className="flex flex-wrap justify-center gap-3 mt-2">
+                                    {Object.entries(WASTE_LEVEL_COLORS).map(([level, color]) => (
+                                        <div key={level} className="flex items-center gap-1.5">
+                                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }}></div>
+                                            <span className="text-xs text-gray-600">{level}</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    )}
+
+                    {/* Bar Chart - Top Wasted Items */}
+                    {!isLoading && analytics && (
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-white border border-gray-200 p-5">
+                                <h3 className="font-semibold text-gray-900 mb-4">Top Wasted Food Items</h3>
+                                <ResponsiveContainer width="100%" height={250}>
+                                    <BarChart data={analytics.topWastedItems} layout="vertical">
+                                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e5e7eb" />
+                                        <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
+                                        <YAxis type="category" dataKey="item" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} width={80} />
+                                        <Tooltip />
+                                        <Bar dataKey="count" fill="#f59e0b" radius={[0, 4, 4, 0]} name="Waste Count" />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+
+                            {/* AI Recommendations */}
+                            <div className="bg-white border border-gray-200 p-5">
+                                <h3 className="font-semibold text-gray-900 mb-4">AI Recommendations</h3>
+                                <div className="space-y-3">
+                                    <div className="p-4 bg-teal-50 border border-teal-200">
+                                        <p className="font-medium text-teal-800 mb-2">📉 Reduce Portion Sizes</p>
+                                        <p className="text-sm text-teal-700">
+                                            {analytics.topWastedItems[0]?.item || 'Top item'} shows high wastage. Consider smaller default portions with refill option.
+                                        </p>
+                                    </div>
+                                    <div className="p-4 bg-blue-50 border border-blue-200">
+                                        <p className="font-medium text-blue-800 mb-2">🕐 Adjust Preparation Timing</p>
+                                        <p className="text-sm text-blue-700">Rice wastage peaks at dinner. Prepare 15% less for weekday dinners based on intent data.</p>
+                                    </div>
+                                    <div className="p-4 bg-purple-50 border border-purple-200">
+                                        <p className="font-medium text-purple-800 mb-2">📋 Menu Optimization</p>
+                                        <p className="text-sm text-purple-700">Rotate unpopular sabzis less frequently. Consider student preferences from feedback.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

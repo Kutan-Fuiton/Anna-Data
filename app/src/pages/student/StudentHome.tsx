@@ -3,6 +3,7 @@ import { useTheme } from '../../context/ThemeProvider';
 import { useAuth } from '../../context/AuthContext';
 import { submitMealIntent, getMealIntents } from '../../services/firestore';
 import MealCard from '../../components/student/MealCard';
+import MealQRCode from '../../components/student/MealQRCode';
 import LeaveCalendar from '../../components/student/LeaveCalendar';
 import UpcomingLeaves from '../../components/student/UpcomingLeaves';
 
@@ -148,6 +149,19 @@ export default function StudentHome() {
                     isEating={mealIntents.dinner}
                     onToggle={handleToggleIntent}
                 />
+            </div>
+
+            {/* QR Codes for Toggled Meals */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {mealIntents.breakfast && (
+                    <MealQRCode mealType="breakfast" isEating={mealIntents.breakfast} />
+                )}
+                {mealIntents.lunch && (
+                    <MealQRCode mealType="lunch" isEating={mealIntents.lunch} />
+                )}
+                {mealIntents.dinner && (
+                    <MealQRCode mealType="dinner" isEating={mealIntents.dinner} />
+                )}
             </div>
 
             {/* Leave Planner Section */}

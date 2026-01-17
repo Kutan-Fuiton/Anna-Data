@@ -1,18 +1,29 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeProvider';
 
+type MealType = 'breakfast' | 'lunch' | 'dinner';
+
 interface MealCardProps {
-    type: 'lunch' | 'dinner';
+    type: MealType;
     cutoffTime: Date;
     menu?: string;
     isLocked?: boolean;
+    isEating: boolean;
+    onToggle: (type: MealType, value: boolean) => void;
 }
 
-export default function MealCard({ type, cutoffTime, menu = 'Menu not available', isLocked = false }: MealCardProps) {
+export default function MealCard({ 
+    type, 
+    cutoffTime, 
+    menu = 'Menu not available', 
+    isLocked = false,
+    isEating,
+    onToggle 
+}: MealCardProps) {
     const { theme } = useTheme();
-    const [isEating, setIsEating] = useState(true);
     const [timeRemaining, setTimeRemaining] = useState('');
-    const [locked, setLocked] = useState(isLocked);
+    // DEMO MODE: Never lock the toggle
+    const locked = false;
 
     useEffect(() => {
         const updateTimer = () => {
@@ -20,8 +31,8 @@ export default function MealCard({ type, cutoffTime, menu = 'Menu not available'
             const diff = cutoffTime.getTime() - now.getTime();
 
             if (diff <= 0) {
-                setLocked(true);
-                setTimeRemaining('Cutoff passed');
+                // DEMO MODE: Don't lock, just show "Always Open"
+                setTimeRemaining('Always Open');
                 return;
             }
 
@@ -36,19 +47,27 @@ export default function MealCard({ type, cutoffTime, menu = 'Menu not available'
         };
 
         updateTimer();
-        const interval = setInterval(updateTimer, 60000); // Update every minute
+        const interval = setInterval(updateTimer, 60000);
 
         return () => clearInterval(interval);
     }, [cutoffTime]);
 
     const handleToggle = () => {
-        if (!locked) {
-            setIsEating(!isEating);
-        }
+        // DEMO MODE: Always allow toggle
+        onToggle(type, !isEating);
     };
 
-    const mealIcon = type === 'lunch' ? '🍛' : '🍽️';
-    const mealLabel = type === 'lunch' ? 'Lunch Today' : 'Dinner Today';
+    const mealIcons: Record<MealType, string> = {
+        breakfast: '🍳',
+        lunch: '🍛',
+        dinner: '🍽️',
+    };
+
+    const mealLabels: Record<MealType, string> = {
+        breakfast: 'Breakfast Today',
+        lunch: 'Lunch Today',
+        dinner: 'Dinner Today',
+    };
 
     return (
         <div className={`rounded-2xl p-5 ${theme === 'dark'
@@ -60,11 +79,11 @@ export default function MealCard({ type, cutoffTime, menu = 'Menu not available'
                 <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center ${theme === 'dark' ? 'bg-green-900/50' : 'bg-green-100'
                         }`}>
-                        <span className="text-xl">{mealIcon}</span>
+                        <span className="text-xl">{mealIcons[type]}</span>
                     </div>
                     <div>
                         <h3 className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                            {mealLabel}
+                            {mealLabels[type]}
                         </h3>
                         <p className={`text-sm flex items-center gap-1 ${locked
                                 ? theme === 'dark' ? 'text-red-400' : 'text-red-500'

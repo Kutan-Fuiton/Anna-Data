@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection - users can read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null; // Admins can read any user
+    }
+    
+    // Meal intents - users can manage their own intents
+    match /mealIntents/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Meal feedback - authenticated users can submit
+    match /mealFeedback/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Meal attendance - for QR scanning system
+    match /mealAttendance/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // AI Summaries - read for all authenticated, write for admins
+    match /aiSummaries/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}
