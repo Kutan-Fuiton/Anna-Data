@@ -4,6 +4,7 @@ Upload an image to detect food items, analyze leftovers, and get AI insights.
 """
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Dict, Optional
@@ -23,6 +24,15 @@ app = FastAPI(
     title="Mess-O-Meter Food Waste Analysis API",
     description="Analyze plates to detect food leftovers and generate waste insights",
     version="2.0.0"
+)
+
+# CORS middleware for frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Initialize detector once at startup
