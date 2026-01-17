@@ -2,8 +2,23 @@ from fastapi import FastAPI
 from firestore import db
 from ai import generate_summary
 from datetime import datetime
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+# Add CORS middleware for frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",  # Vite dev server
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.post("/generate-weekly-summary")
@@ -18,7 +33,7 @@ def generate_weekly_summary():
 
         meal = data.get("mealType", "unknown")
         ratings = data.get("ratings", {})
-        text = data.get("text", "")
+        text = data.get("text") or data.get("comment") or ""
 
         dish_stats.setdefault(meal, {
             "count": 0,

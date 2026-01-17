@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTheme } from '../../context/ThemeProvider';
+import { useAuth } from '../../context/AuthContext';
 
 const navItems = [
     { path: '/student', icon: '📊', label: 'Dashboard', end: true },
@@ -16,13 +17,42 @@ const pageVariants = {
 
 export default function StudentLayout() {
     const { theme, toggleTheme } = useTheme();
+    const { userData, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
-    const handleLogout = () => {
-        // TODO: Clear auth state
+    const handleLogout = async () => {
+        await logout();
         navigate('/');
     };
+
+    // Generate initials from display name or email
+    const getInitials = () => {
+        if (userData?.displayName) {
+            return userData.displayName
+                .split(' ')
+                .map(n => n[0])
+                .join('')
+                .toUpperCase()
+                .slice(0, 2);
+        }
+        if (userData?.email) {
+            return userData.email.slice(0, 2).toUpperCase();
+        }
+        return 'U';
+    };
+
+    const getFormattedName = () => {
+        if (userData?.displayName) return userData.displayName;
+        const fallback = userData?.email?.split('@')[0] || 'Student';
+        return fallback
+            .split(/[._]/)
+            .filter(part => isNaN(Number(part)))
+            .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+    };
+
+    const finalDisplayName = getFormattedName();
 
     return (
         <div className={`min-h-screen flex ${theme === 'dark' ? 'bg-[#0a0f0a]' : 'bg-gray-50'}`}>
@@ -83,30 +113,33 @@ export default function StudentLayout() {
                 </div>
 
                 {/* User Profile */}
-                <div className={`p-4 m-4 rounded-xl ${theme === 'dark' ? 'bg-white/5' : 'bg-gray-100'
-                    }`}>
-                    <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${theme === 'dark' ? 'bg-green-600' : 'bg-green-500'
-                            }`}>
-                            RS
+                <div className={`mt-auto p-6 border-t ${theme === 'dark' ? 'border-white/10' : 'border-gray-100'}`}>
+                    <div className="flex flex-col items-center text-center">
+                        <div className="relative group mb-3">
+                            <div className={`w-20 h-20 rounded-full flex items-center justify-center text-3xl text-white font-bold shadow-xl transition-transform group-hover:scale-105 ${theme === 'dark' ? 'bg-green-600' : 'bg-green-500'
+                                }`}>
+                                {getInitials()}
+                                <div className="absolute bottom-0 right-0 p-1.5 bg-white rounded-full shadow-lg border border-gray-100 text-gray-900 text-xs">
+                                    📷
+                                </div>
+                            </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                            <p className={`font-medium truncate ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                                Rahul Sharma
+                        <div className="space-y-1 mb-4">
+                            <p className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                                {finalDisplayName}
                             </p>
                             <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
-                                Room 304-B
+                                {userData?.email}
                             </p>
                         </div>
                         <button
                             onClick={handleLogout}
-                            className={`p-2 rounded-lg transition-colors ${theme === 'dark'
-                                ? 'text-gray-500 hover:text-red-400 hover:bg-white/5'
-                                : 'text-gray-400 hover:text-red-500 hover:bg-gray-200'
+                            className={`w-full py-2 px-4 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 ${theme === 'dark'
+                                ? 'bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white'
+                                : 'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white'
                                 }`}
-                            title="Logout"
                         >
-                            🚪
+                            <span>🚪</span> Logout Session
                         </button>
                     </div>
                 </div>

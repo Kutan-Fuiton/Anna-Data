@@ -1,32 +1,44 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-type UserRole = 'student' | 'admin';
+import { useAuth, type UserRole } from '../context/AuthContext';
 
 export default function Login() {
     const navigate = useNavigate();
+    const { user, userData, login, error, clearError, loading } = useAuth();
     const [role, setRole] = useState<UserRole>('student');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
+    // Redirect if already logged in and role matches current selection
+    useEffect(() => {
+        if (user && userData && !loading) {
+            // Only auto-redirect if the role matches the selection 
+            // OR if this is the initial load (prevent stuck on login)
+            if (userData.role === role) {
+                navigate(role === 'admin' ? '/admin' : '/student');
+            }
+        }
+    }, [user, userData, loading, navigate, role]);
+
+    // Clear errors when inputs change
+    useEffect(() => {
+        if (error) clearError();
+    }, [email, password, role]);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
 
-        // TODO: Implement actual authentication
-        console.log('Login attempt:', { role, email, password });
+        const success = await login(email, password, role);
 
-        // Simulate API call
-        setTimeout(() => {
-            setIsLoading(false);
-            // Navigate based on role
-            if (role === 'student') {
-                navigate('/student');
-            } else {
-                navigate('/admin');
-            }
-        }, 1000);
+        if (success) {
+            // Re-fetch roles or just navigate based on the validated successful login
+            // The AuthContext now ensures user.role === role if success is true
+            navigate(role === 'admin' ? '/admin' : '/student');
+        }
+
+        setIsLoading(false);
     };
 
     return (
@@ -86,6 +98,13 @@ export default function Login() {
 
                     {/* Login Form */}
                     <form onSubmit={handleSubmit} className="space-y-5">
+                        {/* Error Message */}
+                        {error && (
+                            <div className="p-3 bg-red-500/40 border border-red-500/50 rounded-xl">
+                                <p className="text-white text-sm font-medium text-center">{error}</p>
+                            </div>
+                        )}
+
                         {/* Email Input */}
                         <div className="space-y-2">
                             <label htmlFor="email" className="block text-sm font-medium text-white/80">

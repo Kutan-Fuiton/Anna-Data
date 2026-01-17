@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useAuth } from '../../context/AuthContext';
 
 const navItems = [
     { path: '/admin', icon: '📊', label: 'Dashboard', end: true },
@@ -14,12 +15,42 @@ const pageVariants = {
 };
 
 export default function AdminLayout() {
+    const { userData, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        await logout();
         navigate('/');
     };
+
+    // Generate initials from display name or email
+    const getInitials = () => {
+        if (userData?.displayName) {
+            return userData.displayName
+                .split(' ')
+                .map(n => n[0])
+                .join('')
+                .toUpperCase()
+                .slice(0, 2);
+        }
+        if (userData?.email) {
+            return userData.email.slice(0, 2).toUpperCase();
+        }
+        return 'A';
+    };
+
+    const getFormattedName = () => {
+        if (userData?.displayName) return userData.displayName;
+        const fallback = userData?.email?.split('@')[0] || 'Admin';
+        return fallback
+            .split(/[._]/)
+            .filter(part => isNaN(Number(part)))
+            .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+    };
+
+    const finalDisplayName = getFormattedName();
 
     return (
         <div className="min-h-screen flex bg-gray-50">
@@ -54,21 +85,25 @@ export default function AdminLayout() {
                     ))}
                 </nav>
                 {/* User Profile */}
-                <div className="p-4 border-t border-white/10">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-teal-600 flex items-center justify-center text-white font-bold">
-                            PV
+                <div className="mt-auto p-6 border-t border-white/10">
+                    <div className="flex flex-col items-center text-center">
+                        <div className="relative group mb-3">
+                            <div className="w-20 h-20 rounded-full bg-teal-600 flex items-center justify-center text-3xl text-white font-bold shadow-xl transition-transform group-hover:scale-105">
+                                {getInitials()}
+                                <div className="absolute bottom-0 right-0 p-1.5 bg-white rounded-full shadow-lg border border-gray-100 text-gray-900 text-xs">
+                                    📷
+                                </div>
+                            </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm text-white truncate">Priya Verma</p>
-                            <p className="text-xs text-gray-400">Mess Manager</p>
+                        <div className="space-y-1 mb-4">
+                            <p className="text-xl font-bold text-white">{finalDisplayName}</p>
+                            <p className="text-sm text-gray-400">{userData?.email}</p>
                         </div>
                         <button
                             onClick={handleLogout}
-                            className="p-1 text-gray-400 hover:text-red-400 transition-colors"
-                            title="Logout"
+                            className="w-full py-2 px-4 rounded-xl text-sm font-semibold bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2"
                         >
-                            🚪
+                            <span>🚪</span> Logout
                         </button>
                     </div>
                 </div>
