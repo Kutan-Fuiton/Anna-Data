@@ -476,19 +476,21 @@ export async function markMealAttendance(
 ): Promise<{ success: boolean; error?: string }> {
     try {
         const dateStr = date.toISOString().split('T')[0];
-        const docId = `${userId}_${mealType}_${dateStr}`;
+        // DEMO MODE: Use timestamp to allow multiple scans
+        const docId = `${userId}_${mealType}_${dateStr}_${Date.now()}`;
 
-        // Check if already scanned
-        const existing = await checkMealAttendance(userId, mealType, date);
-        if (existing) {
-            return { success: false, error: 'Already checked in for this meal' };
-        }
+        // DEMO MODE: Skip duplicate check
+        // const existing = await checkMealAttendance(userId, mealType, date);
+        // if (existing) {
+        //     return { success: false, error: 'Already checked in for this meal' };
+        // }
 
-        // DEMO MODE: Skip intent check - in production, uncomment this:
+        // DEMO MODE: Skip intent check
         // const hadIntent = await checkMealIntent(userId, mealType, date);
         // if (!hadIntent) {
         //     return { success: false, error: 'Student did not mark intent to eat this meal' };
         // }
+
 
 
         // Record attendance
