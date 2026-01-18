@@ -244,3 +244,4 @@ This project is licensed under the MIT License.
 <p align="center">
   Made with ❤️ for reducing food waste in India
 </p>
+
