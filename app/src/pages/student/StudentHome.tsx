@@ -16,6 +16,7 @@ export default function StudentHome() {
         dinner: false
     });
     const [isLoading, setIsLoading] = useState(true);
+    const [leaveRefreshTrigger, setLeaveRefreshTrigger] = useState(0);
 
     // Get current date
     const today = new Date();
@@ -155,10 +156,10 @@ export default function StudentHome() {
             {/* Leave Planner Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2">
-                    <LeaveCalendar />
+                    <LeaveCalendar onLeaveCreated={() => setLeaveRefreshTrigger(prev => prev + 1)} />
                 </div>
                 <div>
-                    <UpcomingLeaves />
+                    <UpcomingLeaves refreshTrigger={leaveRefreshTrigger} />
                 </div>
             </div>
         </div>

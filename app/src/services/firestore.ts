@@ -11,6 +11,7 @@ import {
     getDocs,
     setDoc,
     updateDoc,
+    deleteDoc,
     query,
     where,
     orderBy,
@@ -591,6 +592,129 @@ export async function getTodayAttendanceStats(): Promise<{
     } catch (error) {
         console.error('Error fetching attendance stats:', error);
         return { breakfast: 0, lunch: 0, dinner: 0, total: 0 };
+    }
+}
+
+// ============== Leave Request Functions ==============
+
+export interface LeaveRequest {
+    id?: string;
+    userId: string;
+    startDate: Date;
+    endDate: Date;
+    reason?: string;
+    status: 'pending' | 'approved' | 'rejected';
+    createdAt?: Date;
+}
+
+/**
+ * Create a new leave request
+ */
+export async function createLeaveRequest(
+    userId: string,
+    startDate: Date,
+    endDate: Date,
+    reason?: string
+): Promise<{ success: boolean; id?: string; error?: string }> {
+    try {
+        // Firestore rules require startDate and endDate as strings
+        const docRef = await addDoc(collection(db, 'leaveRequests'), {
+            userId,
+            startDate: startDate.toISOString().split('T')[0], // "YYYY-MM-DD" format
+            endDate: endDate.toISOString().split('T')[0],
+            reason: reason || 'Personal leave',
+            status: 'approved',
+            createdAt: serverTimestamp(),
+        });
+
+        return { success: true, id: docRef.id };
+    } catch (error) {
+        console.error('Error creating leave request:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to create leave request';
+        return { success: false, error: errorMessage };
+    }
+}
+
+/**
+ * Get all leaves for a user
+ */
+export async function getUserLeaves(userId: string): Promise<LeaveRequest[]> {
+    try {
+        const q = query(
+            collection(db, 'leaveRequests'),
+            where('userId', '==', userId),
+            orderBy('startDate', 'asc')
+        );
+
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                userId: data.userId,
+                startDate: new Date(data.startDate), // String to Date
+                endDate: new Date(data.endDate),
+                reason: data.reason,
+                status: data.status,
+                createdAt: data.createdAt?.toDate(),
+            };
+        });
+    } catch (error) {
+        console.error('Error fetching user leaves:', error);
+        return [];
+    }
+}
+
+/**
+ * Get upcoming leaves (future dates only)
+ */
+export async function getUpcomingLeaves(userId: string): Promise<LeaveRequest[]> {
+    try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStr = today.toISOString().split('T')[0];
+
+        // Simple query - just filter by userId, filter dates in code
+        const q = query(
+            collection(db, 'leaveRequests'),
+            where('userId', '==', userId)
+        );
+
+        const snapshot = await getDocs(q);
+        const leaves = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                userId: data.userId,
+                startDate: new Date(data.startDate),
+                endDate: new Date(data.endDate),
+                reason: data.reason,
+                status: data.status,
+                createdAt: data.createdAt?.toDate(),
+            };
+        });
+
+        // Filter to only future leaves and sort by date
+        return leaves
+            .filter(leave => leave.startDate.toISOString().split('T')[0] >= todayStr)
+            .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+    } catch (error) {
+        console.error('Error fetching upcoming leaves:', error);
+        return [];
+    }
+}
+
+/**
+ * Delete a leave request
+ */
+export async function deleteLeaveRequest(leaveId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        await deleteDoc(doc(db, 'leaveRequests', leaveId));
+        return { success: true };
+    } catch (error) {
+        console.error('Error deleting leave request:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to delete leave request';
+        return { success: false, error: errorMessage };
     }
 }
 

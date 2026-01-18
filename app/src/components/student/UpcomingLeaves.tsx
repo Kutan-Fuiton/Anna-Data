@@ -1,31 +1,32 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeProvider';
+import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { getUpcomingLeaves, deleteLeaveRequest, type LeaveRequest } from '../../services/firestore';
 
-interface Leave {
-    id: string;
-    startDate: Date;
-    endDate: Date;
-    days: number;
+interface UpcomingLeavesProps {
+    refreshTrigger?: number;
 }
 
-export default function UpcomingLeaves() {
+export default function UpcomingLeaves({ refreshTrigger }: UpcomingLeavesProps) {
     const { theme } = useTheme();
+    const { user } = useAuth();
+    const { showToast } = useToast();
+    const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
-    // Mock data - replace with actual data from API
-    const [leaves, setLeaves] = useState<Leave[]>([
-        {
-            id: '1',
-            startDate: new Date(2026, 0, 20),
-            endDate: new Date(2026, 0, 20),
-            days: 1
-        },
-        {
-            id: '2',
-            startDate: new Date(2026, 0, 25),
-            endDate: new Date(2026, 0, 27),
-            days: 3
+    // Fetch leaves on mount and when refreshTrigger changes
+    useEffect(() => {
+        async function fetchLeaves() {
+            if (!user) return;
+            setIsLoading(true);
+            const data = await getUpcomingLeaves(user.uid);
+            setLeaves(data);
+            setIsLoading(false);
         }
-    ]);
+        fetchLeaves();
+    }, [user, refreshTrigger]);
 
     const formatDate = (date: Date) => {
         const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
@@ -35,16 +36,43 @@ export default function UpcomingLeaves() {
         };
     };
 
-    const handleDelete = (id: string) => {
-        setLeaves(leaves.filter(l => l.id !== id));
+    const calculateDays = (start: Date, end: Date): number => {
+        const diffTime = Math.abs(end.getTime() - start.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        return diffDays;
     };
 
-    const handlePlanNew = () => {
-        // Scroll to calendar or open modal
-        console.log('Plan new leave');
+    // Check if leave can be deleted (must be more than 24 hours before start)
+    const canDelete = (leave: LeaveRequest): boolean => {
+        const now = new Date();
+        const hoursUntilLeave = (leave.startDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+        return hoursUntilLeave > 24; // Can only delete if more than 24 hours away
     };
 
-    const totalDays = leaves.reduce((sum, leave) => sum + leave.days, 0);
+    const handleDelete = async (leave: LeaveRequest) => {
+        if (!leave.id) return;
+        
+        if (!canDelete(leave)) {
+            showToast('Cannot cancel leave within 24 hours of start date. Contact admin.', 'error');
+            return;
+        }
+        
+        setDeletingId(leave.id);
+        
+        const result = await deleteLeaveRequest(leave.id);
+        
+        if (result.success) {
+            setLeaves(leaves.filter(l => l.id !== leave.id));
+            showToast('Leave cancelled successfully', 'success');
+        } else {
+            showToast('Failed to cancel leave: ' + result.error, 'error');
+        }
+        
+        setDeletingId(null);
+    };
+
+
+    const totalDays = leaves.reduce((sum, leave) => sum + calculateDays(leave.startDate, leave.endDate), 0);
 
     return (
         <div className={`rounded-2xl p-5 ${theme === 'dark'
@@ -66,9 +94,16 @@ export default function UpcomingLeaves() {
 
             {/* Leave List */}
             <div className="space-y-3 max-h-64 overflow-y-auto">
-                {leaves.length > 0 ? (
+                {isLoading ? (
+                    <div className="py-8 text-center">
+                        <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}>
+                            Loading...
+                        </p>
+                    </div>
+                ) : leaves.length > 0 ? (
                     leaves.map((leave) => {
                         const { month, day } = formatDate(leave.startDate);
+                        const days = calculateDays(leave.startDate, leave.endDate);
                         return (
                             <div
                                 key={leave.id}
@@ -87,22 +122,24 @@ export default function UpcomingLeaves() {
                                 {/* Leave Info */}
                                 <div className="flex-1">
                                     <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                                        Planned Leave
+                                        {leave.reason || 'Planned Leave'}
                                     </p>
                                     <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                                        {leave.days === 1 ? 'Single day' : `${leave.days} days`}
+                                        {days === 1 ? 'Single day' : `${days} days`}
                                     </p>
                                 </div>
 
                                 {/* Delete Button */}
                                 <button
-                                    onClick={() => handleDelete(leave.id)}
+                                    onClick={() => handleDelete(leave)}
+                                    disabled={deletingId === leave.id || !canDelete(leave)}
                                     className={`p-2 rounded-lg transition-colors ${theme === 'dark'
                                         ? 'text-red-400 hover:bg-red-500/10'
                                         : 'text-red-500 hover:bg-red-50'
-                                        }`}
+                                        } ${deletingId === leave.id || !canDelete(leave) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    title={!canDelete(leave) ? 'Cannot cancel within 24 hours of start' : 'Cancel leave'}
                                 >
-                                    ✕
+                                    {deletingId === leave.id ? '...' : '✕'}
                                 </button>
                             </div>
                         );
@@ -110,27 +147,15 @@ export default function UpcomingLeaves() {
                 ) : (
                     <div className="py-8 text-center">
                         <span className="text-4xl mb-3 block">🎉</span>
-                        <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                            No other leaves planned.
+                        <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}>
+                            No upcoming leaves planned.
                         </p>
                         <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                            Keep up the streak!
+                            Use the calendar to plan leaves!
                         </p>
                     </div>
                 )}
             </div>
-
-            {/* Plan New Leave Button */}
-            <button
-                onClick={handlePlanNew}
-                className={`w-full mt-4 py-3 px-4 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${theme === 'dark'
-                    ? 'bg-green-600 hover:bg-green-500 text-white'
-                    : 'bg-green-500 hover:bg-green-600 text-white'
-                    }`}
-            >
-                <span>+</span>
-                Plan New Leave
-            </button>
         </div>
     );
 }

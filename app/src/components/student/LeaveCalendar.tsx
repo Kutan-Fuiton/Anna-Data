@@ -1,14 +1,35 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeProvider';
+import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { createLeaveRequest, getUserLeaves, type LeaveRequest } from '../../services/firestore';
 
-export default function LeaveCalendar() {
+interface LeaveCalendarProps {
+    onLeaveCreated?: () => void;
+}
+
+export default function LeaveCalendar({ onLeaveCreated }: LeaveCalendarProps) {
     const { theme } = useTheme();
+    const { user } = useAuth();
+    const { showToast } = useToast();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedDates, setSelectedDates] = useState<Date[]>([]);
     const [selectionStart, setSelectionStart] = useState<Date | null>(null);
+    const [existingLeaves, setExistingLeaves] = useState<LeaveRequest[]>([]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    // Fetch existing leaves on mount
+    useEffect(() => {
+        async function fetchLeaves() {
+            if (!user) return;
+            const leaves = await getUserLeaves(user.uid);
+            setExistingLeaves(leaves);
+        }
+        fetchLeaves();
+    }, [user]);
 
     const getDaysInMonth = (date: Date) => {
         const year = date.getFullYear();
@@ -16,8 +37,7 @@ export default function LeaveCalendar() {
         const firstDay = new Date(year, month, 1);
         const lastDay = new Date(year, month + 1, 0);
         const daysInMonth = lastDay.getDate();
-        const startingDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1; // Monday start
-
+        const startingDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
         return { daysInMonth, startingDay, year, month };
     };
 
@@ -30,13 +50,8 @@ export default function LeaveCalendar() {
 
     const weekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
-    const prevMonth = () => {
-        setCurrentDate(new Date(year, month - 1, 1));
-    };
-
-    const nextMonth = () => {
-        setCurrentDate(new Date(year, month + 1, 1));
-    };
+    const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
+    const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
 
     const isSelected = (day: number) => {
         const checkDate = new Date(year, month, day);
@@ -47,12 +62,20 @@ export default function LeaveCalendar() {
         );
     };
 
+    const isOnLeave = (day: number) => {
+        const checkDate = new Date(year, month, day);
+        checkDate.setHours(0, 0, 0, 0);
+        return existingLeaves.some(leave => {
+            const start = new Date(leave.startDate);
+            const end = new Date(leave.endDate);
+            start.setHours(0, 0, 0, 0);
+            end.setHours(23, 59, 59, 999);
+            return checkDate >= start && checkDate <= end;
+        });
+    };
+
     const isToday = (day: number) => {
-        return (
-            today.getFullYear() === year &&
-            today.getMonth() === month &&
-            today.getDate() === day
-        );
+        return today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
     };
 
     const isPast = (day: number) => {
@@ -62,7 +85,7 @@ export default function LeaveCalendar() {
     };
 
     const handleDateClick = (day: number) => {
-        if (isPast(day)) return;
+        if (isPast(day) || isOnLeave(day)) return;
 
         const clickedDate = new Date(year, month, day);
 
@@ -70,14 +93,13 @@ export default function LeaveCalendar() {
             setSelectionStart(clickedDate);
             setSelectedDates([clickedDate]);
         } else {
-            // Create range
             const start = selectionStart < clickedDate ? selectionStart : clickedDate;
             const end = selectionStart < clickedDate ? clickedDate : selectionStart;
 
             const range: Date[] = [];
             const current = new Date(start);
             while (current <= end) {
-                if (current >= today) {
+                if (current >= today && !isOnLeave(current.getDate())) {
                     range.push(new Date(current));
                 }
                 current.setDate(current.getDate() + 1);
@@ -88,13 +110,28 @@ export default function LeaveCalendar() {
         }
     };
 
-    const handleApplyLeave = () => {
-        if (selectedDates.length > 0) {
-            console.log('Applying leave for:', selectedDates);
-            // TODO: API call to save leave
-            alert(`Leave applied for ${selectedDates.length} day(s)`);
+    const handleApplyLeave = async () => {
+        if (selectedDates.length === 0 || !user) return;
+
+        setIsSubmitting(true);
+        
+        const startDate = selectedDates[0];
+        const endDate = selectedDates[selectedDates.length - 1];
+
+        const result = await createLeaveRequest(user.uid, startDate, endDate);
+        
+        if (result.success) {
+            showToast(`Leave applied for ${selectedDates.length} day(s)!`, 'success');
+            // Refresh leaves list
+            const leaves = await getUserLeaves(user.uid);
+            setExistingLeaves(leaves);
             setSelectedDates([]);
+            onLeaveCreated?.();
+        } else {
+            showToast('Failed to apply leave: ' + result.error, 'error');
         }
+
+        setIsSubmitting(false);
     };
 
     // Generate calendar grid
@@ -166,7 +203,7 @@ export default function LeaveCalendar() {
                     <button
                         key={index}
                         onClick={() => item.isCurrentMonth && handleDateClick(item.day)}
-                        disabled={!item.isCurrentMonth || isPast(item.day)}
+                        disabled={!item.isCurrentMonth || isPast(item.day) || isOnLeave(item.day)}
                         className={`
                             relative h-10 flex items-center justify-center text-sm font-semibold
                             transition-all duration-200 border-r border-b
@@ -175,17 +212,21 @@ export default function LeaveCalendar() {
                                 ? theme === 'dark' ? 'text-gray-700 bg-transparent' : 'text-gray-300 bg-gray-50/50'
                                 : isPast(item.day)
                                     ? theme === 'dark' ? 'text-gray-600' : 'text-gray-300'
-                                    : isToday(item.day)
-                                        ? 'bg-green-600 text-white font-bold'
-                                        : isSelected(item.day)
-                                            ? theme === 'dark'
-                                                ? 'bg-green-800/60 text-green-300 font-bold'
-                                                : 'bg-green-100 text-green-800 font-bold'
-                                            : theme === 'dark'
-                                                ? 'text-white hover:bg-green-900/30'
-                                                : 'text-gray-800 hover:bg-gray-100'
+                                    : isOnLeave(item.day)
+                                        ? theme === 'dark'
+                                            ? 'bg-orange-900/40 text-orange-400'
+                                            : 'bg-orange-100 text-orange-600'
+                                        : isToday(item.day)
+                                            ? 'bg-green-600 text-white font-bold'
+                                            : isSelected(item.day)
+                                                ? theme === 'dark'
+                                                    ? 'bg-green-800/60 text-green-300 font-bold'
+                                                    : 'bg-green-100 text-green-800 font-bold'
+                                                : theme === 'dark'
+                                                    ? 'text-white hover:bg-green-900/30'
+                                                    : 'text-gray-800 hover:bg-gray-100'
                             }
-                            ${!item.isCurrentMonth || isPast(item.day) ? 'cursor-default' : 'cursor-pointer'}
+                            ${!item.isCurrentMonth || isPast(item.day) || isOnLeave(item.day) ? 'cursor-default' : 'cursor-pointer'}
                         `}
                     >
                         {item.day}
@@ -203,23 +244,22 @@ export default function LeaveCalendar() {
                 <div className="flex items-center gap-4 text-sm">
                     <div className="flex items-center gap-2">
                         <span className="w-3 h-3 rounded-full bg-green-500" />
-                        <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}>Eating</span>
+                        <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}>Selected</span>
                     </div>
                     <div className="flex items-center gap-2">
-                        <span className={`w-3 h-3 rounded-full ${theme === 'dark' ? 'bg-green-900' : 'bg-green-200'
-                            }`} />
+                        <span className={`w-3 h-3 rounded-full ${theme === 'dark' ? 'bg-orange-700' : 'bg-orange-300'}`} />
                         <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}>On Leave</span>
                     </div>
                 </div>
                 <button
                     onClick={handleApplyLeave}
-                    disabled={selectedDates.length === 0}
-                    className={`text-sm font-medium transition-colors ${selectedDates.length > 0
+                    disabled={selectedDates.length === 0 || isSubmitting}
+                    className={`text-sm font-medium transition-colors ${selectedDates.length > 0 && !isSubmitting
                         ? 'text-green-500 hover:text-green-400'
                         : theme === 'dark' ? 'text-gray-600' : 'text-gray-400'
                         }`}
                 >
-                    Apply for Range
+                    {isSubmitting ? 'Saving...' : `Apply for ${selectedDates.length > 0 ? selectedDates.length + ' day(s)' : 'Range'}`}
                 </button>
             </div>
         </div>
