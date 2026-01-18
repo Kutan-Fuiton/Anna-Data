@@ -1,5 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from '../../context/ThemeProvider';
+import { useAuth } from '../../context/AuthContext';
+import { QRCodeSVG } from 'qrcode.react';
+import { generateQRHash, type QRPayload } from '../../services/firestore';
 
 type MealType = 'breakfast' | 'lunch' | 'dinner';
 
@@ -21,6 +24,7 @@ export default function MealCard({
     onToggle 
 }: MealCardProps) {
     const { theme } = useTheme();
+    const { user } = useAuth();
     const [timeRemaining, setTimeRemaining] = useState('');
     // DEMO MODE: Never lock the toggle
     const locked = false;
@@ -31,7 +35,6 @@ export default function MealCard({
             const diff = cutoffTime.getTime() - now.getTime();
 
             if (diff <= 0) {
-                // DEMO MODE: Don't lock, just show "Always Open"
                 setTimeRemaining('Always Open');
                 return;
             }
@@ -53,9 +56,28 @@ export default function MealCard({
     }, [cutoffTime]);
 
     const handleToggle = () => {
-        // DEMO MODE: Always allow toggle
         onToggle(type, !isEating);
     };
+
+    // Generate QR code data when eating is true
+    const qrData = useMemo(() => {
+        if (!user || !isEating) return null;
+        
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0];
+        const timestamp = Date.now();
+        const hash = generateQRHash(user.uid, type, dateStr, timestamp);
+        
+        const payload: QRPayload = {
+            uid: user.uid,
+            meal: type,
+            date: dateStr,
+            ts: timestamp,
+            hash,
+        };
+        
+        return JSON.stringify(payload);
+    }, [user, type, isEating]);
 
     const mealIcons: Record<MealType, string> = {
         breakfast: '🍳',
@@ -136,6 +158,34 @@ export default function MealCard({
                     </p>
                 </div>
             </div>
+
+            {/* QR Code - Shows when toggle is ON */}
+            {isEating && qrData && (
+                <div className={`mt-4 pt-4 border-t ${theme === 'dark' ? 'border-green-900/30' : 'border-gray-100'}`}>
+                    <div className="flex items-center justify-between mb-3">
+                        <p className={`text-xs uppercase tracking-wide ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                            Your QR Code
+                        </p>
+                        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-500/20 text-green-500 text-xs font-medium">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                            Active
+                        </span>
+                    </div>
+                    <div className="flex justify-center p-3 rounded-xl bg-white">
+                        <QRCodeSVG
+                            value={qrData}
+                            size={140}
+                            level="M"
+                            includeMargin={true}
+                            fgColor="#000000"
+                            bgColor="#ffffff"
+                        />
+                    </div>
+                    <p className={`text-xs text-center mt-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                        Show this to mess staff
+                    </p>
+                </div>
+            )}
         </div>
     );
 }

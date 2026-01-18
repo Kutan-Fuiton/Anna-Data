@@ -3,17 +3,17 @@ import { useTheme } from '../../context/ThemeProvider';
 import { useAuth } from '../../context/AuthContext';
 import { submitMealIntent, getMealIntents } from '../../services/firestore';
 import MealCard from '../../components/student/MealCard';
-import MealQRCode from '../../components/student/MealQRCode';
 import LeaveCalendar from '../../components/student/LeaveCalendar';
 import UpcomingLeaves from '../../components/student/UpcomingLeaves';
 
 export default function StudentHome() {
     const { theme } = useTheme();
     const { user, userData } = useAuth();
+    // Default to OFF - toggles are false initially
     const [mealIntents, setMealIntents] = useState({
-        breakfast: true,
-        lunch: true,
-        dinner: true
+        breakfast: false,
+        lunch: false,
+        dinner: false
     });
     const [isLoading, setIsLoading] = useState(true);
 
@@ -151,18 +151,6 @@ export default function StudentHome() {
                 />
             </div>
 
-            {/* QR Codes for Toggled Meals */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {mealIntents.breakfast && (
-                    <MealQRCode mealType="breakfast" isEating={mealIntents.breakfast} />
-                )}
-                {mealIntents.lunch && (
-                    <MealQRCode mealType="lunch" isEating={mealIntents.lunch} />
-                )}
-                {mealIntents.dinner && (
-                    <MealQRCode mealType="dinner" isEating={mealIntents.dinner} />
-                )}
-            </div>
 
             {/* Leave Planner Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
