@@ -608,6 +608,16 @@ export interface LeaveRequest {
 }
 
 /**
+ * Helper to format date as YYYY-MM-DD in local timezone
+ */
+function formatLocalDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+/**
  * Create a new leave request
  */
 export async function createLeaveRequest(
@@ -617,11 +627,11 @@ export async function createLeaveRequest(
     reason?: string
 ): Promise<{ success: boolean; id?: string; error?: string }> {
     try {
-        // Firestore rules require startDate and endDate as strings
+        // Use local date format to avoid timezone issues
         const docRef = await addDoc(collection(db, 'leaveRequests'), {
             userId,
-            startDate: startDate.toISOString().split('T')[0], // "YYYY-MM-DD" format
-            endDate: endDate.toISOString().split('T')[0],
+            startDate: formatLocalDate(startDate),
+            endDate: formatLocalDate(endDate),
             reason: reason || 'Personal leave',
             status: 'approved',
             createdAt: serverTimestamp(),
@@ -633,6 +643,14 @@ export async function createLeaveRequest(
         const errorMessage = error instanceof Error ? error.message : 'Failed to create leave request';
         return { success: false, error: errorMessage };
     }
+}
+
+/**
+ * Helper to parse YYYY-MM-DD string as local date (not UTC)
+ */
+function parseLocalDate(dateStr: string): Date {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day); // Month is 0-indexed
 }
 
 /**
@@ -652,8 +670,8 @@ export async function getUserLeaves(userId: string): Promise<LeaveRequest[]> {
             return {
                 id: doc.id,
                 userId: data.userId,
-                startDate: new Date(data.startDate), // String to Date
-                endDate: new Date(data.endDate),
+                startDate: parseLocalDate(data.startDate),
+                endDate: parseLocalDate(data.endDate),
                 reason: data.reason,
                 status: data.status,
                 createdAt: data.createdAt?.toDate(),
@@ -672,7 +690,6 @@ export async function getUpcomingLeaves(userId: string): Promise<LeaveRequest[]>
     try {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const todayStr = today.toISOString().split('T')[0];
 
         // Simple query - just filter by userId, filter dates in code
         const q = query(
@@ -680,14 +697,15 @@ export async function getUpcomingLeaves(userId: string): Promise<LeaveRequest[]>
             where('userId', '==', userId)
         );
 
+
         const snapshot = await getDocs(q);
         const leaves = snapshot.docs.map(doc => {
             const data = doc.data();
             return {
                 id: doc.id,
                 userId: data.userId,
-                startDate: new Date(data.startDate),
-                endDate: new Date(data.endDate),
+                startDate: parseLocalDate(data.startDate),
+                endDate: parseLocalDate(data.endDate),
                 reason: data.reason,
                 status: data.status,
                 createdAt: data.createdAt?.toDate(),
@@ -696,7 +714,7 @@ export async function getUpcomingLeaves(userId: string): Promise<LeaveRequest[]>
 
         // Filter to only future leaves and sort by date
         return leaves
-            .filter(leave => leave.startDate.toISOString().split('T')[0] >= todayStr)
+            .filter(leave => leave.startDate >= today)
             .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
     } catch (error) {
         console.error('Error fetching upcoming leaves:', error);
