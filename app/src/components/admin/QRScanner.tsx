@@ -40,14 +40,14 @@ export default function QRScanner({ onClose, onScanSuccess }: QRScannerProps) {
     // Initialize scanner for camera mode
     useEffect(() => {
         if (scanMode !== 'camera' || scanResult) return;
-        
+
         const scannerId = 'qr-scanner-container';
-        
+
         const initScanner = async () => {
             try {
                 scannerRef.current = new Html5Qrcode(scannerId);
                 setIsScanning(true);
-                
+
                 await scannerRef.current.start(
                     { facingMode: 'environment' },
                     {
@@ -55,7 +55,7 @@ export default function QRScanner({ onClose, onScanSuccess }: QRScannerProps) {
                         qrbox: { width: 250, height: 250 },
                     },
                     handleScan,
-                    () => {} // Ignore errors during scanning
+                    () => { } // Ignore errors during scanning
                 );
             } catch (err) {
                 console.error('Failed to start scanner:', err);
@@ -84,33 +84,44 @@ export default function QRScanner({ onClose, onScanSuccess }: QRScannerProps) {
 
     const processQRData = async (decodedText: string) => {
         try {
+            console.log('Decoded QR Text:', decodedText);
+
             // Parse QR data
-            const payload: QRPayload = JSON.parse(decodedText);
-            
+            let payload: QRPayload;
+            try {
+                payload = JSON.parse(decodedText.trim());
+            } catch (pErr) {
+                console.error('JSON parsing failed:', pErr);
+                setScanResult({
+                    success: false,
+                    message: 'Could not read data from QR. Invalid format.',
+                });
+                return;
+            }
+
             // Validate hash
             if (!validateQRHash(payload)) {
                 setScanResult({
                     success: false,
-                    message: 'Invalid QR code - possible tampering detected',
+                    message: 'Security Check Failed: QR signature is invalid.',
                 });
                 return;
             }
-            
-            // Check if QR is from today
-            const today = new Date().toISOString().split('T')[0];
-            if (payload.date !== today) {
+
+            // Check if QR is recent (allows +/- 24h window for meal times across days)
+            const qrDate = new Date(payload.date);
+            const now = new Date();
+            const diffInHours = Math.abs(now.getTime() - qrDate.getTime()) / (1000 * 60 * 60);
+
+            if (diffInHours > 48) { // Generous 48-hour window for demo
                 setScanResult({
                     success: false,
-                    message: 'This QR code is expired (not from today)',
+                    message: `Expired: This QR code is from ${payload.date}.`,
                 });
                 return;
             }
-            
-            // DEMO MODE: Skip time check
-            // const now = Date.now();
-            // const qrAge = now - payload.ts;
-            // const maxAge = 4 * 60 * 60 * 1000;
-            // if (qrAge > maxAge) { ... }
+
+            setIsProcessing(true);
 
             // Mark attendance
             const result = await markMealAttendance(
@@ -126,21 +137,24 @@ export default function QRScanner({ onClose, onScanSuccess }: QRScannerProps) {
                 setScanResult({
                     success: true,
                     message: 'Attendance recorded successfully!',
+                    studentName: result.userName,
                     mealType: payload.meal,
                 });
                 onScanSuccess?.();
             } else {
                 setScanResult({
                     success: false,
-                    message: result.error || 'Failed to record attendance',
+                    message: result.error || 'Database error: Could not save attendance.',
                 });
             }
         } catch (err) {
             console.error('Error processing QR:', err);
             setScanResult({
                 success: false,
-                message: 'Invalid QR code format',
+                message: 'Internal Error: Processing failed.',
             });
+        } finally {
+            setIsProcessing(false);
         }
     };
 
@@ -154,10 +168,10 @@ export default function QRScanner({ onClose, onScanSuccess }: QRScannerProps) {
         try {
             // Create a temporary Html5Qrcode instance for file scanning
             const html5Qrcode = new Html5Qrcode('qr-upload-temp');
-            
+
             const result = await html5Qrcode.scanFile(file, true);
             await processQRData(result);
-            
+
             html5Qrcode.clear();
         } catch (err) {
             console.error('Error scanning uploaded image:', err);
@@ -176,7 +190,7 @@ export default function QRScanner({ onClose, onScanSuccess }: QRScannerProps) {
     const handleRescan = async () => {
         setScanResult(null);
         setError(null);
-        
+
         if (scanMode === 'camera' && scannerRef.current && !scannerRef.current.isScanning) {
             try {
                 setIsScanning(true);
@@ -187,7 +201,7 @@ export default function QRScanner({ onClose, onScanSuccess }: QRScannerProps) {
                         qrbox: { width: 250, height: 250 },
                     },
                     handleScan,
-                    () => {}
+                    () => { }
                 );
             } catch (err) {
                 console.error('Failed to restart scanner:', err);
@@ -226,21 +240,19 @@ export default function QRScanner({ onClose, onScanSuccess }: QRScannerProps) {
                     <div className="flex border-b">
                         <button
                             onClick={() => switchMode('camera')}
-                            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                                scanMode === 'camera'
-                                    ? 'text-teal-600 border-b-2 border-teal-600'
-                                    : 'text-gray-500 hover:text-gray-700'
-                            }`}
+                            className={`flex-1 py-3 text-sm font-medium transition-colors ${scanMode === 'camera'
+                                ? 'text-teal-600 border-b-2 border-teal-600'
+                                : 'text-gray-500 hover:text-gray-700'
+                                }`}
                         >
                             📷 Camera
                         </button>
                         <button
                             onClick={() => switchMode('upload')}
-                            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                                scanMode === 'upload'
-                                    ? 'text-teal-600 border-b-2 border-teal-600'
-                                    : 'text-gray-500 hover:text-gray-700'
-                            }`}
+                            className={`flex-1 py-3 text-sm font-medium transition-colors ${scanMode === 'upload'
+                                ? 'text-teal-600 border-b-2 border-teal-600'
+                                : 'text-gray-500 hover:text-gray-700'
+                                }`}
                         >
                             🖼️ Upload Image
                         </button>
@@ -274,28 +286,32 @@ export default function QRScanner({ onClose, onScanSuccess }: QRScannerProps) {
                     ) : scanResult ? (
                         <div className="text-center py-6">
                             {/* Result Icon */}
-                            <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-4 ${
-                                scanResult.success ? 'bg-green-100' : 'bg-red-100'
-                            }`}>
+                            <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-4 ${scanResult.success ? 'bg-green-100' : 'bg-red-100'
+                                }`}>
                                 <span className="text-4xl">
                                     {scanResult.success ? '✓' : '✕'}
                                 </span>
                             </div>
-                            
+
                             {/* Result Message */}
-                            <p className={`text-lg font-semibold mb-2 ${
-                                scanResult.success ? 'text-green-600' : 'text-red-600'
-                            }`}>
+                            <p className={`text-lg font-semibold mb-2 ${scanResult.success ? 'text-green-600' : 'text-red-600'
+                                }`}>
                                 {scanResult.success ? 'Success!' : 'Error'}
                             </p>
                             <p className="text-gray-600 mb-4">{scanResult.message}</p>
-                            
+
+                            {scanResult.studentName && (
+                                <p className="text-sm font-medium text-teal-600 mb-1">
+                                    Student: {scanResult.studentName}
+                                </p>
+                            )}
+
                             {scanResult.mealType && (
                                 <p className="text-sm text-gray-500 mb-4">
                                     Meal: <span className="capitalize font-medium">{scanResult.mealType}</span>
                                 </p>
                             )}
-                            
+
                             {/* Action Buttons */}
                             <div className="flex gap-3 justify-center">
                                 <button
@@ -315,12 +331,12 @@ export default function QRScanner({ onClose, onScanSuccess }: QRScannerProps) {
                     ) : scanMode === 'camera' ? (
                         <div>
                             {/* Camera View */}
-                            <div 
-                                id="qr-scanner-container" 
+                            <div
+                                id="qr-scanner-container"
                                 ref={containerRef}
                                 className="rounded-lg overflow-hidden"
                             />
-                            
+
                             {/* Scanning indicator */}
                             {isScanning && (
                                 <div className="text-center mt-4">
@@ -342,7 +358,7 @@ export default function QRScanner({ onClose, onScanSuccess }: QRScannerProps) {
                                 className="hidden"
                                 id="qr-image-upload"
                             />
-                            
+
                             {isProcessing ? (
                                 <div>
                                     <div className="text-4xl mb-4 animate-pulse">🔍</div>

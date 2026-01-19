@@ -54,21 +54,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             if (userDoc.exists()) {
                 const data = userDoc.data();
+                let displayName = data.displayName || firebaseUser.displayName;
+
+                // Sync calculated name to backend if missing
+                if (!displayName && firebaseUser.email) {
+                    displayName = firebaseUser.email.split('@')[0]
+                        .split(/[._]/)
+                        .filter(part => isNaN(Number(part)))
+                        .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                        .join(' ');
+
+                    // Save the calculated name to backend
+                    await setDoc(doc(db, 'users', firebaseUser.uid), { displayName }, { merge: true });
+                }
+
                 return {
                     uid: firebaseUser.uid,
                     email: firebaseUser.email || '',
-                    displayName: data.displayName || firebaseUser.displayName,
+                    displayName: displayName,
                     role: data.role || 'student',
                     points: data.points || 0,
                     createdAt: data.createdAt?.toDate(),
                 };
             }
 
+            // Calculate initial display name from email
+            const fallbackName = firebaseUser.email
+                ? firebaseUser.email.split('@')[0]
+                    .split(/[._]/)
+                    .filter(part => isNaN(Number(part)))
+                    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join(' ')
+                : 'User';
+
             // If no user doc exists, create one with default role
             const newUserData: UserData = {
                 uid: firebaseUser.uid,
                 email: firebaseUser.email || '',
-                displayName: firebaseUser.displayName,
+                displayName: firebaseUser.displayName || fallbackName,
                 role: 'student',
                 points: 0,
             };

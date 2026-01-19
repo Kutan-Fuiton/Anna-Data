@@ -474,7 +474,7 @@ export async function markMealAttendance(
     mealType: 'breakfast' | 'lunch' | 'dinner',
     date: Date,
     scannedBy: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; userName?: string; userEmail?: string }> {
     try {
         const dateStr = date.toISOString().split('T')[0];
         // DEMO MODE: Use timestamp to allow multiple scans
@@ -494,11 +494,28 @@ export async function markMealAttendance(
 
 
 
+        // Fetch student details if not provided
+        let finalName = userName;
+        let finalEmail = userEmail;
+
+        if (!finalName || !finalEmail) {
+            try {
+                const userDoc = await getDoc(doc(db, 'users', userId));
+                if (userDoc.exists()) {
+                    const data = userDoc.data();
+                    finalName = finalName || data.displayName;
+                    finalEmail = finalEmail || data.email;
+                }
+            } catch (err) {
+                console.warn('Could not fetch user details for attendance:', err);
+            }
+        }
+
         // Record attendance
         await setDoc(doc(db, 'mealAttendance', docId), {
             userId,
-            userName: userName || 'Unknown',
-            userEmail: userEmail || '',
+            userName: finalName || 'Unknown',
+            userEmail: finalEmail || '',
             date: Timestamp.fromDate(date),
             mealType,
             scannedAt: serverTimestamp(),
@@ -508,7 +525,11 @@ export async function markMealAttendance(
         // Award bonus points for actually showing up
         await addUserPoints(userId, 5, 'meal_attendance');
 
-        return { success: true };
+        return {
+            success: true,
+            userName: finalName || undefined,
+            userEmail: finalEmail || undefined
+        };
     } catch (error) {
         console.error('Error marking meal attendance:', error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to record attendance';
