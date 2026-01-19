@@ -9,12 +9,14 @@ import UpcomingLeaves from '../../components/student/UpcomingLeaves';
 export default function StudentHome() {
     const { theme } = useTheme();
     const { user, userData } = useAuth();
+    // Default to OFF - toggles are false initially
     const [mealIntents, setMealIntents] = useState({
-        breakfast: true,
-        lunch: true,
-        dinner: true
+        breakfast: false,
+        lunch: false,
+        dinner: false
     });
     const [isLoading, setIsLoading] = useState(true);
+    const [leaveRefreshTrigger, setLeaveRefreshTrigger] = useState(0);
 
     // Get current date
     const today = new Date();
@@ -150,13 +152,14 @@ export default function StudentHome() {
                 />
             </div>
 
+
             {/* Leave Planner Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2">
-                    <LeaveCalendar />
+                    <LeaveCalendar onLeaveCreated={() => setLeaveRefreshTrigger(prev => prev + 1)} />
                 </div>
                 <div>
-                    <UpcomingLeaves />
+                    <UpcomingLeaves refreshTrigger={leaveRefreshTrigger} />
                 </div>
             </div>
         </div>

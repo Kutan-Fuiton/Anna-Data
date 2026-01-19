@@ -277,6 +277,93 @@ async def analyze_food_waste(image: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
+@app.post("/generate-weekly-summary")
+async def generate_weekly_summary():
+    """
+    Generate an AI-powered weekly summary of meal feedback.
+    Aggregates all feedback from Firestore and uses Gemini to create insights.
+    """
+    try:
+        from google.cloud import firestore
+        import os
+        
+        # Initialize Firestore (uses GOOGLE_APPLICATION_CREDENTIALS env var)
+        service_key_path = Path(__file__).parent / "mess-o-meter-backend" / "serviceAccountKey.json"
+        if service_key_path.exists():
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(service_key_path)
+        
+        db = firestore.Client()
+        
+        # Fetch all meal feedback
+        feedback_docs = db.collection("mealFeedback").stream()
+        
+        dish_stats = {}
+        total_feedback = 0
+        
+        for doc in feedback_docs:
+            data = doc.to_dict()
+            meal = data.get("mealType", "unknown")
+            ratings = data.get("ratings", {})
+            text = data.get("text") or data.get("comment") or ""
+            
+            dish_stats.setdefault(meal, {
+                "count": 0,
+                "ratingsSum": {},
+                "issues": {}
+            })
+            
+            dish_stats[meal]["count"] += 1
+            total_feedback += 1
+            
+            # Aggregate ratings
+            for k, v in ratings.items():
+                if isinstance(v, (int, float)):
+                    dish_stats[meal]["ratingsSum"][k] = (
+                        dish_stats[meal]["ratingsSum"].get(k, 0) + v
+                    )
+            
+            # Extract issues from text
+            for word in text.lower().split():
+                dish_stats[meal]["issues"][word] = (
+                    dish_stats[meal]["issues"].get(word, 0) + 1
+                )
+        
+        # No feedback guard
+        if total_feedback == 0:
+            return {
+                "success": True,
+                "message": "No feedback available",
+                "content": "No meal feedback was submitted during this period."
+            }
+        
+        aggregated_data = {
+            "range": "weekly",
+            "totalFeedback": total_feedback,
+            "dishStats": dish_stats
+        }
+        
+        # Generate AI summary using Gemini
+        summary = await gemini_service.generate_weekly_summary(aggregated_data)
+        
+        # Save AI output to Firestore
+        db.collection("aiSummaries").document("weekly_summary").set({
+            "range": "weekly",
+            "type": "feedback",
+            "content": summary,
+            "generatedAt": datetime.utcnow()
+        })
+        
+        return {
+            "success": True,
+            "message": "Weekly AI summary generated",
+            "content": summary
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate summary: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

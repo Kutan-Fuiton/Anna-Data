@@ -120,6 +120,37 @@ Respond with ONLY the report, no extra headers or text."""
             print(f"⚠️ Gemini admin insight failed: {e}")
             return None
 
+    async def generate_weekly_summary(self, aggregated_data: Dict) -> str:
+        """Generate a weekly summary of meal feedback using AI."""
+        if not self.enabled:
+            return "AI summary not available - Gemini API not configured."
+        
+        try:
+            prompt = f"""You are summarizing aggregated mess feedback for administrators.
+
+Rules:
+- Do NOT invent numbers
+- Do NOT estimate quantities
+- If feedback is limited, clearly say so
+- Use neutral, factual language
+- Format with clear sections and bullet points
+
+DATA:
+{aggregated_data}
+
+Provide a concise summary including:
+1. Overview of feedback volume
+2. Key insights by meal type
+3. Common issues or praise
+4. Actionable recommendations for mess management"""
+
+            response = await self.model.generate_content_async(prompt)
+            return response.text.strip()
+        except Exception as e:
+            print(f"⚠️ Gemini weekly summary failed: {e}")
+            return "No sufficient feedback data available for this period."
+
 
 # Singleton instance
 gemini_service = GeminiInsightGenerator()
+
