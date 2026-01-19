@@ -23,6 +23,9 @@ app.add_middleware(
 
 @app.post("/generate-weekly-summary")
 def generate_weekly_summary():
+    if db is None:
+        return {"message": "Database not connected", "error": "Missing service account key"}
+
     feedback_docs = db.collection("mealFeedback").stream()
 
     dish_stats = {}
