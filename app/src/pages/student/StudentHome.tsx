@@ -19,6 +19,13 @@ export default function StudentHome() {
     const [isLoading, setIsLoading] = useState(true);
     const [leaveRefreshTrigger, setLeaveRefreshTrigger] = useState(0);
     const [showScanner, setShowScanner] = useState(false);
+    const [scanningMealType, setScanningMealType] = useState<'breakfast' | 'lunch' | 'dinner'>('breakfast');
+
+    // Handle opening scanner for a specific meal
+    const handleOpenScanner = (mealType: 'breakfast' | 'lunch' | 'dinner') => {
+        setScanningMealType(mealType);
+        setShowScanner(true);
+    };
 
     // Get current date
     const today = new Date();
@@ -137,7 +144,7 @@ export default function StudentHome() {
                     menu="Aloo Paratha, Curd, Tea"
                     isEating={mealIntents.breakfast}
                     onToggle={handleToggleIntent}
-                    onScanClick={() => setShowScanner(true)}
+                    onScanClick={() => handleOpenScanner('breakfast')}
                 />
                 <MealCard
                     type="lunch"
@@ -145,7 +152,7 @@ export default function StudentHome() {
                     menu="Rajma Chawal, Roti, Salad"
                     isEating={mealIntents.lunch}
                     onToggle={handleToggleIntent}
-                    onScanClick={() => setShowScanner(true)}
+                    onScanClick={() => handleOpenScanner('lunch')}
                 />
                 <MealCard
                     type="dinner"
@@ -153,14 +160,15 @@ export default function StudentHome() {
                     menu="Paneer Butter Masala, Rice"
                     isEating={mealIntents.dinner}
                     onToggle={handleToggleIntent}
-                    onScanClick={() => setShowScanner(true)}
+                    onScanClick={() => handleOpenScanner('dinner')}
                 />
             </div>
 
             {/* QR Scanner Modal */}
             <StudentQRScanner 
                 isOpen={showScanner} 
-                onClose={() => setShowScanner(false)} 
+                onClose={() => setShowScanner(false)}
+                expectedMealType={scanningMealType}
             />
 
             {/* Leave Planner Section */}

@@ -6,10 +6,7 @@
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useTheme } from '../../context/ThemeProvider';
-import {
-    generateAdminMealQR,
-    getCurrentMealType,
-} from '../../services/firestore';
+import { generateQR, getCurrentMealType } from '../../services/qrApi';
 
 interface AdminQRDisplayProps {
     className?: string;
@@ -23,7 +20,7 @@ export default function AdminQRDisplay({ className = '' }: AdminQRDisplayProps) 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Generate QR on mount and when meal type changes
+    // Generate QR on mount
     useEffect(() => {
         async function loadQR() {
             setIsLoading(true);
@@ -32,7 +29,7 @@ export default function AdminQRDisplay({ className = '' }: AdminQRDisplayProps) 
             const currentMeal = getCurrentMealType();
             setMealType(currentMeal);
 
-            const result = await generateAdminMealQR(currentMeal, new Date());
+            const result = await generateQR(currentMeal, false);
             
             if (result.success && result.qrData) {
                 setQrData(result.qrData);
@@ -50,7 +47,7 @@ export default function AdminQRDisplay({ className = '' }: AdminQRDisplayProps) 
         setIsLoading(true);
         setError(null);
 
-        const result = await generateAdminMealQR(meal, new Date());
+        const result = await generateQR(meal, false);
         
         if (result.success && result.qrData) {
             setQrData(result.qrData);
@@ -66,7 +63,7 @@ export default function AdminQRDisplay({ className = '' }: AdminQRDisplayProps) 
         setIsLoading(true);
         setError(null);
 
-        const result = await generateAdminMealQR(mealType, new Date(), true); // forceRefresh = true
+        const result = await generateQR(mealType, true); // forceRefresh = true
         
         if (result.success && result.qrData) {
             setQrData(result.qrData);

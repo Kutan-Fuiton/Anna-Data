@@ -16,9 +16,10 @@ import {
 interface StudentQRScannerProps {
     isOpen: boolean;
     onClose: () => void;
+    expectedMealType?: 'breakfast' | 'lunch' | 'dinner'; // Which meal card was clicked
 }
 
-export default function StudentQRScanner({ isOpen, onClose }: StudentQRScannerProps) {
+export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: StudentQRScannerProps) {
     const { theme } = useTheme();
     const { user } = useAuth();
     const { showToast } = useToast();
@@ -47,6 +48,17 @@ export default function StudentQRScanner({ isOpen, onClose }: StudentQRScannerPr
         const validation = validateAdminQR(qrData);
         if (!validation.valid) {
             setResult({ success: false, message: validation.error || 'Invalid QR' });
+            setIsProcessing(false);
+            return;
+        }
+
+        // Check if QR meal type matches expected meal type from clicked card
+        if (expectedMealType && validation.payload?.mealType !== expectedMealType) {
+            const scannedMeal = validation.payload?.mealType || 'unknown';
+            setResult({ 
+                success: false, 
+                message: `This is a ${scannedMeal} QR. Please scan the ${expectedMealType} QR instead.` 
+            });
             setIsProcessing(false);
             return;
         }

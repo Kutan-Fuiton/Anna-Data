@@ -894,12 +894,13 @@ export async function markAttendanceFromStudentScan(
         const { mealType, date } = validation.payload;
         const parsedDate = parseLocalDate(date);
 
-        // Check for duplicate attendance today
+        // TEMPORARILY DISABLED: Check for duplicate attendance today
+        // Will add back later for one-time scanning
         const docId = `${userId}_${mealType}_${date}`;
-        const existingDoc = await getDoc(doc(db, 'mealAttendance', docId));
-        if (existingDoc.exists()) {
-            return { success: false, error: 'You have already marked attendance for this meal' };
-        }
+        // const existingDoc = await getDoc(doc(db, 'mealAttendance', docId));
+        // if (existingDoc.exists()) {
+        //     return { success: false, error: 'You have already marked attendance for this meal' };
+        // }
 
         // Fetch user details if not provided
         let finalName = userName;
