@@ -20,7 +20,7 @@ const LEAVE_TYPES = [
 
 export default function LeaveCalendar({ onLeaveCreated }: LeaveCalendarProps) {
     const { theme } = useTheme();
-    const { user } = useAuth();
+    const { user, userData } = useAuth();
     const { showToast } = useToast();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedDates, setSelectedDates] = useState<Date[]>([]);
@@ -143,8 +143,10 @@ export default function LeaveCalendar({ onLeaveCreated }: LeaveCalendarProps) {
         const startDate = selectedDates[0];
         const endDate = selectedDates[selectedDates.length - 1];
         const reason = leaveTitle.trim() || 'Personal leave';
+        // Use userData from Firestore (has displayName) instead of user from Firebase Auth
+        const userName = userData?.displayName || user.displayName || 'Unknown';
 
-        const result = await createLeaveRequest(user.uid, startDate, endDate, reason);
+        const result = await createLeaveRequest(user.uid, startDate, endDate, reason, userName);
         
         if (result.success) {
             showToast(`Leave applied: ${reason} (${selectedDates.length} days)`, 'success');

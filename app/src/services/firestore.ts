@@ -994,12 +994,14 @@ export async function createLeaveRequest(
     userId: string,
     startDate: Date,
     endDate: Date,
-    reason?: string
+    reason?: string,
+    userName?: string
 ): Promise<{ success: boolean; id?: string; error?: string }> {
     try {
         // Use local date format to avoid timezone issues
         const docRef = await addDoc(collection(db, 'leaveRequests'), {
             userId,
+            userName: userName || 'Unknown',
             startDate: formatLocalDate(startDate),
             endDate: formatLocalDate(endDate),
             reason: reason || 'Personal leave',
@@ -1049,6 +1051,36 @@ export async function getUserLeaves(userId: string): Promise<LeaveRequest[]> {
         });
     } catch (error) {
         console.error('Error fetching user leaves:', error);
+        return [];
+    }
+}
+
+/**
+ * Get all leaves (for admin view)
+ */
+export async function getAllLeaves(): Promise<LeaveRequest[]> {
+    try {
+        const q = query(
+            collection(db, 'leaveRequests'),
+            orderBy('startDate', 'desc')
+        );
+
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                userId: data.userId,
+                userName: data.userName || 'Unknown',
+                startDate: parseLocalDate(data.startDate),
+                endDate: parseLocalDate(data.endDate),
+                reason: data.reason,
+                status: data.status,
+                createdAt: data.createdAt?.toDate(),
+            };
+        });
+    } catch (error) {
+        console.error('Error fetching all leaves:', error);
         return [];
     }
 }
@@ -1118,26 +1150,36 @@ export interface AdminQRPayload {
 
 /**
  * Generate or get existing admin QR for a meal
+ * @param forceRefresh - If true, deletes existing QR and generates a new one
  */
 export async function generateAdminMealQR(
     mealType: 'breakfast' | 'lunch' | 'dinner',
-    date: Date
+    date: Date,
+    forceRefresh: boolean = false
 ): Promise<{ success: boolean; qrData?: string; error?: string }> {
     try {
         const dateStr = formatLocalDate(date);
         const docId = `${mealType}_${dateStr}`;
-        console.log('[Admin QR] Checking for existing QR:', docId);
+        console.log('[Admin QR] Checking for existing QR:', docId, 'forceRefresh:', forceRefresh);
 
-        // Check if QR already exists for this meal/date
-        const existingDoc = await getDoc(doc(db, 'adminAttendanceQR', docId));
+        const docRef = doc(db, 'adminAttendanceQR', docId);
 
-        if (existingDoc.exists()) {
-            const data = existingDoc.data();
-            console.log('[Admin QR] Found existing QR, reusing');
-            return { success: true, qrData: data.qrData };
+        // If force refresh, delete existing QR first
+        if (forceRefresh) {
+            console.log('[Admin QR] Force refresh - deleting existing QR');
+            await deleteDoc(docRef);
+        } else {
+            // Check if QR already exists for this meal/date
+            const existingDoc = await getDoc(docRef);
+
+            if (existingDoc.exists()) {
+                const data = existingDoc.data();
+                console.log('[Admin QR] Found existing QR, reusing');
+                return { success: true, qrData: data.qrData };
+            }
         }
 
-        console.log('[Admin QR] No existing QR, generating new one');
+        console.log('[Admin QR] Generating new QR');
         // Generate new QR payload
         const qrPayload: AdminQRPayload = {
             type: 'admin_attendance',
@@ -1151,7 +1193,7 @@ export async function generateAdminMealQR(
         console.log('[Admin QR] Generated payload:', qrPayload);
 
         // Save to Firestore
-        await setDoc(doc(db, 'adminAttendanceQR', docId), {
+        await setDoc(docRef, {
             mealType,
             date: dateStr,
             qrData,
@@ -1163,7 +1205,8 @@ export async function generateAdminMealQR(
         return { success: true, qrData };
     } catch (error) {
         console.error('[Admin QR] Error generating:', error);
-        return { success: false, error: 'Failed to generate QR code' };
+        const errorMessage = error instanceof Error ? error.message : 'Failed to generate QR code';
+        return { success: false, error: errorMessage };
     }
 }
 
@@ -1232,12 +1275,13 @@ export async function markAttendanceFromStudentScan(
         const { mealType, date } = validation.payload;
         const parsedDate = parseLocalDate(date);
 
-        // Check for duplicate attendance today
+        // TEMPORARILY DISABLED: Check for duplicate attendance today
+        // Will add back later for one-time scanning
         const docId = `${userId}_${mealType}_${date}`;
-        const existingDoc = await getDoc(doc(db, 'mealAttendance', docId));
-        if (existingDoc.exists()) {
-            return { success: false, error: 'You have already marked attendance for this meal' };
-        }
+        // const existingDoc = await getDoc(doc(db, 'mealAttendance', docId));
+        // if (existingDoc.exists()) {
+        //     return { success: false, error: 'You have already marked attendance for this meal' };
+        // }
 
         // Fetch user details if not provided
         let finalName = userName;

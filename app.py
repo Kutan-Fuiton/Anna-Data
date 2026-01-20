@@ -372,7 +372,154 @@ async def generate_weekly_summary():
         raise HTTPException(status_code=500, detail=f"Failed to generate summary: {str(e)}")
 
 
+# ============== QR Code API Endpoints ==============
+
+class QRGenerateRequest(BaseModel):
+    meal_type: str  # 'breakfast', 'lunch', or 'dinner'
+    force_refresh: bool = False
+
+
+class QRResponse(BaseModel):
+    success: bool
+    qr_data: Optional[str] = None
+    meal_type: Optional[str] = None
+    date: Optional[str] = None
+    error: Optional[str] = None
+
+
+def get_today_date_str() -> str:
+    """Get today's date as YYYY-MM-DD string."""
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def generate_qr_payload(meal_type: str, date_str: str) -> dict:
+    """Generate QR payload for a meal."""
+    import time
+    qr_id = f"{meal_type}_{date_str}_{int(time.time() * 1000)}"
+    return {
+        "type": "admin_attendance",
+        "mealType": meal_type,
+        "date": date_str,
+        "qrId": qr_id,
+        "generatedAt": int(time.time() * 1000)
+    }
+
+
+@app.post("/qr/generate", response_model=QRResponse)
+async def generate_qr(request: QRGenerateRequest):
+    """
+    Generate or get existing QR code for a meal.
+    
+    Args:
+        meal_type: breakfast, lunch, or dinner
+        force_refresh: If true, generates a new QR even if one exists
+    
+    Returns:
+        QR data as JSON string to be encoded into QR image
+    """
+    import json
+    
+    meal_type = request.meal_type.lower()
+    if meal_type not in ['breakfast', 'lunch', 'dinner']:
+        raise HTTPException(status_code=400, detail="Invalid meal_type. Must be breakfast, lunch, or dinner.")
+    
+    try:
+        # Import firebase_admin here to avoid startup issues
+        import firebase_admin
+        from firebase_admin import credentials, firestore
+        
+        # Initialize Firebase if not already done
+        if not firebase_admin._apps:
+            cred = credentials.Certificate("serviceAccountKey.json")
+            firebase_admin.initialize_app(cred)
+        
+        db = firestore.client()
+        date_str = get_today_date_str()
+        doc_id = f"{meal_type}_{date_str}"
+        doc_ref = db.collection("adminAttendanceQR").document(doc_id)
+        
+        # Force refresh: delete existing and create new
+        if request.force_refresh:
+            doc_ref.delete()
+        else:
+            # Check if QR already exists
+            existing = doc_ref.get()
+            if existing.exists:
+                data = existing.to_dict()
+                return QRResponse(
+                    success=True,
+                    qr_data=data.get("qrData"),
+                    meal_type=meal_type,
+                    date=date_str
+                )
+        
+        # Generate new QR
+        payload = generate_qr_payload(meal_type, date_str)
+        qr_data = json.dumps(payload)
+        
+        # Save to Firestore
+        doc_ref.set({
+            "mealType": meal_type,
+            "date": date_str,
+            "qrData": qr_data,
+            "qrId": payload["qrId"],
+            "createdAt": firestore.SERVER_TIMESTAMP
+        })
+        
+        return QRResponse(
+            success=True,
+            qr_data=qr_data,
+            meal_type=meal_type,
+            date=date_str
+        )
+        
+    except Exception as e:
+        return QRResponse(success=False, error=str(e))
+
+
+@app.get("/qr/{meal_type}", response_model=QRResponse)
+async def get_qr(meal_type: str):
+    """Get current QR code for a meal."""
+    import json
+    
+    meal_type = meal_type.lower()
+    if meal_type not in ['breakfast', 'lunch', 'dinner']:
+        raise HTTPException(status_code=400, detail="Invalid meal_type.")
+    
+    try:
+        import firebase_admin
+        from firebase_admin import credentials, firestore
+        
+        if not firebase_admin._apps:
+            cred = credentials.Certificate("serviceAccountKey.json")
+            firebase_admin.initialize_app(cred)
+        
+        db = firestore.client()
+        date_str = get_today_date_str()
+        doc_id = f"{meal_type}_{date_str}"
+        doc_ref = db.collection("adminAttendanceQR").document(doc_id)
+        
+        existing = doc_ref.get()
+        if existing.exists:
+            data = existing.to_dict()
+            return QRResponse(
+                success=True,
+                qr_data=data.get("qrData"),
+                meal_type=meal_type,
+                date=date_str
+            )
+        else:
+            return QRResponse(
+                success=False,
+                error="No QR code generated for this meal yet"
+            )
+        
+    except Exception as e:
+        return QRResponse(success=False, error=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
