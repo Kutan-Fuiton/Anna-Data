@@ -36,8 +36,7 @@ service cloud.firestore {
     // ---------- ADMIN ATTENDANCE QR (NEW) ----------
     match /adminAttendanceQR/{id} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn();
-      allow delete: if isAdmin();
+      allow create, update, delete: if isSignedIn();
     }
 
     // ---------- LEAVE REQUESTS ----------

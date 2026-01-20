@@ -769,26 +769,36 @@ export interface AdminQRPayload {
 
 /**
  * Generate or get existing admin QR for a meal
+ * @param forceRefresh - If true, deletes existing QR and generates a new one
  */
 export async function generateAdminMealQR(
     mealType: 'breakfast' | 'lunch' | 'dinner',
-    date: Date
+    date: Date,
+    forceRefresh: boolean = false
 ): Promise<{ success: boolean; qrData?: string; error?: string }> {
     try {
         const dateStr = formatLocalDate(date);
         const docId = `${mealType}_${dateStr}`;
-        console.log('[Admin QR] Checking for existing QR:', docId);
+        console.log('[Admin QR] Checking for existing QR:', docId, 'forceRefresh:', forceRefresh);
 
-        // Check if QR already exists for this meal/date
-        const existingDoc = await getDoc(doc(db, 'adminAttendanceQR', docId));
+        const docRef = doc(db, 'adminAttendanceQR', docId);
 
-        if (existingDoc.exists()) {
-            const data = existingDoc.data();
-            console.log('[Admin QR] Found existing QR, reusing');
-            return { success: true, qrData: data.qrData };
+        // If force refresh, delete existing QR first
+        if (forceRefresh) {
+            console.log('[Admin QR] Force refresh - deleting existing QR');
+            await deleteDoc(docRef);
+        } else {
+            // Check if QR already exists for this meal/date
+            const existingDoc = await getDoc(docRef);
+
+            if (existingDoc.exists()) {
+                const data = existingDoc.data();
+                console.log('[Admin QR] Found existing QR, reusing');
+                return { success: true, qrData: data.qrData };
+            }
         }
 
-        console.log('[Admin QR] No existing QR, generating new one');
+        console.log('[Admin QR] Generating new QR');
         // Generate new QR payload
         const qrPayload: AdminQRPayload = {
             type: 'admin_attendance',
@@ -802,7 +812,7 @@ export async function generateAdminMealQR(
         console.log('[Admin QR] Generated payload:', qrPayload);
 
         // Save to Firestore
-        await setDoc(doc(db, 'adminAttendanceQR', docId), {
+        await setDoc(docRef, {
             mealType,
             date: dateStr,
             qrData,
@@ -814,7 +824,8 @@ export async function generateAdminMealQR(
         return { success: true, qrData };
     } catch (error) {
         console.error('[Admin QR] Error generating:', error);
-        return { success: false, error: 'Failed to generate QR code' };
+        const errorMessage = error instanceof Error ? error.message : 'Failed to generate QR code';
+        return { success: false, error: errorMessage };
     }
 }
 

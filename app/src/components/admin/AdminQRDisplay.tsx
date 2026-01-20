@@ -61,6 +61,22 @@ export default function AdminQRDisplay({ className = '' }: AdminQRDisplayProps) 
         setIsLoading(false);
     };
 
+    // Force refresh QR (generate a new one with different ID)
+    const handleRefreshQR = async () => {
+        setIsLoading(true);
+        setError(null);
+
+        const result = await generateAdminMealQR(mealType, new Date(), true); // forceRefresh = true
+        
+        if (result.success && result.qrData) {
+            setQrData(result.qrData);
+        } else {
+            setError(result.error || 'Failed to refresh QR');
+        }
+        
+        setIsLoading(false);
+    };
+
     const formatMealName = (meal: string) => {
         return meal.charAt(0).toUpperCase() + meal.slice(1);
     };
@@ -182,6 +198,22 @@ export default function AdminQRDisplay({ className = '' }: AdminQRDisplayProps) 
                                 📱 Students scan this QR to mark their <span className="font-semibold text-green-500">{formatMealName(mealType)}</span> attendance
                             </p>
                         </div>
+
+                        {/* Refresh Button */}
+                        <button
+                            onClick={handleRefreshQR}
+                            disabled={isLoading}
+                            className={`mt-4 w-full py-2 px-4 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all ${
+                                theme === 'dark'
+                                    ? 'bg-white/10 text-gray-300 hover:bg-white/20 disabled:opacity-50'
+                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-50'
+                            }`}
+                        >
+                            <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            {isLoading ? 'Refreshing...' : 'Refresh QR (New Code)'}
+                        </button>
 
                         {/* Active Status */}
                         <div className="mt-4 flex items-center justify-center gap-2">
