@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import QRScanner from '../../components/admin/QRScanner';
 import { getTodayAttendanceStats, getTodayAttendance, type MealAttendance } from '../../services/firestore';
 
 type TimeRange = 'daily' | 'weekly' | 'monthly';
@@ -15,7 +14,6 @@ interface Complaint {
 
 export default function AdminDashboard() {
     const [timeRange, setTimeRange] = useState<TimeRange>('daily');
-    const [showScanner, setShowScanner] = useState(false);
     const [attendanceStats, setAttendanceStats] = useState({ breakfast: 0, lunch: 0, dinner: 0, total: 0 });
     const [recentScans, setRecentScans] = useState<MealAttendance[]>([]);
 
@@ -28,7 +26,7 @@ export default function AdminDashboard() {
             setRecentScans(scans.slice(0, 5));
         };
         fetchStats();
-    }, [showScanner]); // Refresh after scanner closes
+    }, []); // Refresh on mount
 
     // Mock data
     const lastUpdated = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -91,25 +89,11 @@ export default function AdminDashboard() {
                     <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors">
                         <span>↓</span> Download Report
                     </button>
-                    <button 
-                        onClick={() => setShowScanner(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-medium hover:bg-teal-500 transition-colors"
-                    >
-                        <span>📷</span> Scan QR
-                    </button>
                     <button className="flex items-center gap-2 px-4 py-2 bg-[#0d2137] text-white text-sm font-medium hover:bg-[#152d4a] transition-colors">
                         <span>+</span> New Entry
                     </button>
                 </div>
             </div>
-
-            {/* QR Scanner Modal */}
-            {showScanner && (
-                <QRScanner 
-                    onClose={() => setShowScanner(false)} 
-                    onScanSuccess={() => {}}
-                />
-            )}
 
             {/* Today's Attendance Card */}
             <div className="bg-gradient-to-r from-teal-500 to-teal-600 text-white p-5 mb-6 rounded-lg">

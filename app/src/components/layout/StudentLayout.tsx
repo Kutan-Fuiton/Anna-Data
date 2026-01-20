@@ -1,13 +1,7 @@
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTheme } from '../../context/ThemeProvider';
 import { useAuth } from '../../context/AuthContext';
-
-const navItems = [
-    { path: '/student', icon: '📊', label: 'Dashboard', end: true },
-    { path: '/student/meal-review', icon: '🍽️', label: 'Meal Review', end: false },
-    { path: '/student/mess-points', icon: '⭐', label: 'Mess Points', end: false },
-];
 
 const pageVariants = {
     initial: { opacity: 0, y: 20 },
@@ -20,10 +14,18 @@ export default function StudentLayout() {
     const { userData, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
+    const { username } = useParams<{ username: string }>();
+
+    // Dynamic nav items based on username
+    const navItems = [
+        { path: `/${username}`, icon: '📊', label: 'Dashboard', end: true },
+        { path: `/${username}/meal-review`, icon: '🍽️', label: 'Meal Review', end: false },
+        { path: `/${username}/mess-points`, icon: '⭐', label: 'Mess Points', end: false },
+    ];
 
     const handleLogout = async () => {
         await logout();
-        navigate('/');
+        navigate('/', { replace: true });
     };
 
     // Generate initials from display name or email

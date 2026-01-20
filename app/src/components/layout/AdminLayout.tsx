@@ -1,13 +1,7 @@
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import AttendanceNotifications from '../admin/AttendanceNotifications';
-
-const navItems = [
-    { path: '/admin', icon: '📊', label: 'Dashboard', end: true },
-    { path: '/admin/insights', icon: '🧠', label: 'Insights & AI', end: false },
-    { path: '/admin/operations', icon: '⚙️', label: 'Operations', end: false },
-];
 
 const pageVariants = {
     initial: { opacity: 0, y: 10 },
@@ -19,10 +13,18 @@ export default function AdminLayout() {
     const { userData, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
+    const { username } = useParams<{ username: string }>();
+
+    // Dynamic nav items based on username
+    const navItems = [
+        { path: `/${username}/admin`, icon: '📊', label: 'Dashboard', end: true },
+        { path: `/${username}/admin/insights`, icon: '🧠', label: 'Insights & AI', end: false },
+        { path: `/${username}/admin/operations`, icon: '⚙️', label: 'Operations', end: false },
+    ];
 
     const handleLogout = async () => {
         await logout();
-        navigate('/');
+        navigate('/', { replace: true });
     };
 
     // Generate initials from display name or email

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, type UserRole } from '../context/AuthContext';
+import { getStudentUrl, getAdminUrl } from '../utils/urlUtils';
 
 export default function Login() {
     const navigate = useNavigate();
@@ -10,16 +11,15 @@ export default function Login() {
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
-    // Redirect if already logged in and role matches current selection
+    // Redirect if already logged in
     useEffect(() => {
         if (user && userData && !loading) {
-            // Only auto-redirect if the role matches the selection 
-            // OR if this is the initial load (prevent stuck on login)
-            if (userData.role === role) {
-                navigate(role === 'admin' ? '/admin' : '/student');
-            }
+            const redirectUrl = userData.role === 'admin' 
+                ? getAdminUrl(userData.displayName)
+                : getStudentUrl(userData.displayName);
+            navigate(redirectUrl, { replace: true });
         }
-    }, [user, userData, loading, navigate, role]);
+    }, [user, userData, loading, navigate]);
 
     // Clear errors when inputs change
     useEffect(() => {
@@ -33,9 +33,8 @@ export default function Login() {
         const success = await login(email, password, role);
 
         if (success) {
-            // Re-fetch roles or just navigate based on the validated successful login
-            // The AuthContext now ensures user.role === role if success is true
-            navigate(role === 'admin' ? '/admin' : '/student');
+            // After successful login, get fresh user data and redirect
+            // The useEffect above will handle the redirect once userData is loaded
         }
 
         setIsLoading(false);

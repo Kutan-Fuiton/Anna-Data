@@ -1,10 +1,13 @@
 /**
  * Firebase Configuration
  * Initialize Firebase services for the AnnaData app
+ * 
+ * NOTE: Using inMemoryPersistence to allow different accounts in different tabs.
+ * Each tab maintains its own independent auth session.
  */
 
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, inMemoryPersistence, setPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // Firebase configuration from environment variables
@@ -28,8 +31,16 @@ for (const key of requiredKeys) {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize services
+// Initialize Auth with in-memory persistence
+// This allows different accounts in different tabs of the same browser
 export const auth = getAuth(app);
+
+// Set in-memory persistence (each tab has its own session)
+setPersistence(auth, inMemoryPersistence).catch((error) => {
+    console.error('Error setting auth persistence:', error);
+});
+
+// Initialize Firestore
 export const db = getFirestore(app);
 
 export default app;
