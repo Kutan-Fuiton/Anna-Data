@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AdminQRDisplay from '../../components/admin/AdminQRDisplay';
+import LiveAttendance from '../../components/admin/LiveAttendance';
+import { getAllLeaves } from '../../services/firestore';
 
 type ActiveTab = 'attendance' | 'points' | 'reports';
 
-interface LeaveRequest {
+interface AdminLeaveDisplay {
     id: string;
     studentName: string;
-    room: string;
+    reason: string;
     startDate: string;
     endDate: string;
     days: number;
@@ -32,25 +34,71 @@ interface Reward {
 
 export default function AdminOperations() {
     const [activeTab, setActiveTab] = useState<ActiveTab>('attendance');
+    const [activeLeaves, setActiveLeaves] = useState<AdminLeaveDisplay[]>([]);
+    const [isLoadingLeaves, setIsLoadingLeaves] = useState(true);
 
     // Attendance Forecast (next 7 days)
     const forecast = [
-        { date: 'Today', day: 'Fri', lunch: 820, dinner: 780 },
-        { date: 'Jan 18', day: 'Sat', lunch: 650, dinner: 620 },
-        { date: 'Jan 19', day: 'Sun', lunch: 580, dinner: 550 },
-        { date: 'Jan 20', day: 'Mon', lunch: 890, dinner: 850 },
-        { date: 'Jan 21', day: 'Tue', lunch: 870, dinner: 840 },
-        { date: 'Jan 22', day: 'Wed', lunch: 860, dinner: 830 },
-        { date: 'Jan 23', day: 'Thu', lunch: 880, dinner: 860 },
+        { date: 'Today', day: 'Tue', lunch: 820, dinner: 780 },
+        { date: 'Jan 22', day: 'Wed', lunch: 650, dinner: 620 },
+        { date: 'Jan 23', day: 'Thu', lunch: 580, dinner: 550 },
+        { date: 'Jan 24', day: 'Fri', lunch: 890, dinner: 850 },
+        { date: 'Jan 25', day: 'Sat', lunch: 870, dinner: 840 },
+        { date: 'Jan 26', day: 'Sun', lunch: 860, dinner: 830 },
+        { date: 'Jan 27', day: 'Mon', lunch: 880, dinner: 860 },
     ];
 
-    // Active Leaves
-    const activeLeaves: LeaveRequest[] = [
-        { id: '1', studentName: 'Arun Mehta', room: '204-A', startDate: 'Jan 16', endDate: 'Jan 18', days: 3, status: 'active' },
-        { id: '2', studentName: 'Sneha Gupta', room: '305-B', startDate: 'Jan 17', endDate: 'Jan 20', days: 4, status: 'active' },
-        { id: '3', studentName: 'Vikram Reddy', room: '102-C', startDate: 'Jan 19', endDate: 'Jan 21', days: 3, status: 'upcoming' },
-        { id: '4', studentName: 'Priya Nair', room: '408-A', startDate: 'Jan 20', endDate: 'Jan 25', days: 6, status: 'upcoming' },
-    ];
+    // Fetch leaves from Firestore
+    useEffect(() => {
+        async function fetchLeaves() {
+            setIsLoadingLeaves(true);
+            try {
+                const leaves = await getAllLeaves();
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                const formatted: AdminLeaveDisplay[] = leaves
+                    .filter(leave => leave.id) // Only include leaves with valid ID
+                    .map((leave) => {
+                        const startDate = new Date(leave.startDate);
+                        const endDate = new Date(leave.endDate);
+                        const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                        
+                        // Determine status: active if today is between start and end, upcoming if in future
+                        let status: 'active' | 'upcoming' = 'upcoming';
+                        if (today >= startDate && today <= endDate) {
+                            status = 'active';
+                        }
+
+                        // Get userName from the leave data (stored as reason or name field)
+                        const studentName = (leave as unknown as { userName?: string }).userName || 'Unknown';
+
+                        return {
+                            id: leave.id!,
+                            studentName,
+                            reason: leave.reason || 'Personal leave',
+                            startDate: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                            endDate: endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                            days,
+                            status,
+                        };
+                    })
+                    .filter(l => {
+                        // Filter to only show active and upcoming (not past)
+                        const leave = leaves.find(x => x.id === l.id);
+                        if (!leave) return false;
+                        const endDate = new Date(leave.endDate);
+                        return endDate >= today;
+                    });
+
+                setActiveLeaves(formatted);
+            } catch (error) {
+                console.error('Error fetching leaves:', error);
+            }
+            setIsLoadingLeaves(false);
+        }
+        fetchLeaves();
+    }, []);
 
     // No-Show Students
     const noShowStudents: NoShowStudent[] = [
@@ -111,6 +159,9 @@ export default function AdminOperations() {
             {/* Attendance & Leaves Tab */}
             {activeTab === 'attendance' && (
                 <div className="space-y-6">
+                    {/* Real-time Attendance */}
+                    <LiveAttendance />
+
                     {/* Forecast Table */}
                     <div className="bg-white border border-gray-200 p-5">
                         <h3 className="font-semibold text-gray-900 mb-4">7-Day Attendance Forecast</h3>
@@ -143,7 +194,7 @@ export default function AdminOperations() {
                                     <div key={leave.id} className="flex items-center justify-between p-3 border border-gray-100 hover:bg-gray-50">
                                         <div>
                                             <p className="font-medium text-gray-900">{leave.studentName}</p>
-                                            <p className="text-xs text-gray-500">Room {leave.room} • {leave.startDate} - {leave.endDate}</p>
+                                            <p className="text-xs text-gray-500">{leave.reason} • {leave.startDate} - {leave.endDate}</p>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <span className={`text-xs px-2 py-0.5 ${leave.status === 'active'

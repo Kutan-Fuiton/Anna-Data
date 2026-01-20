@@ -645,12 +645,14 @@ export async function createLeaveRequest(
     userId: string,
     startDate: Date,
     endDate: Date,
-    reason?: string
+    reason?: string,
+    userName?: string
 ): Promise<{ success: boolean; id?: string; error?: string }> {
     try {
         // Use local date format to avoid timezone issues
         const docRef = await addDoc(collection(db, 'leaveRequests'), {
             userId,
+            userName: userName || 'Unknown',
             startDate: formatLocalDate(startDate),
             endDate: formatLocalDate(endDate),
             reason: reason || 'Personal leave',
@@ -700,6 +702,36 @@ export async function getUserLeaves(userId: string): Promise<LeaveRequest[]> {
         });
     } catch (error) {
         console.error('Error fetching user leaves:', error);
+        return [];
+    }
+}
+
+/**
+ * Get all leaves (for admin view)
+ */
+export async function getAllLeaves(): Promise<LeaveRequest[]> {
+    try {
+        const q = query(
+            collection(db, 'leaveRequests'),
+            orderBy('startDate', 'desc')
+        );
+
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                userId: data.userId,
+                userName: data.userName || 'Unknown',
+                startDate: parseLocalDate(data.startDate),
+                endDate: parseLocalDate(data.endDate),
+                reason: data.reason,
+                status: data.status,
+                createdAt: data.createdAt?.toDate(),
+            };
+        });
+    } catch (error) {
+        console.error('Error fetching all leaves:', error);
         return [];
     }
 }
