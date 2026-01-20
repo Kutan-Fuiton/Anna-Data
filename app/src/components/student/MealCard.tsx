@@ -1,8 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeProvider';
-import { useAuth } from '../../context/AuthContext';
-import { QRCodeSVG } from 'qrcode.react';
-import { generateQRHash, type QRPayload } from '../../services/firestore';
 
 type MealType = 'breakfast' | 'lunch' | 'dinner';
 
@@ -10,21 +7,20 @@ interface MealCardProps {
     type: MealType;
     cutoffTime: Date;
     menu?: string;
-    isLocked?: boolean;
     isEating: boolean;
     onToggle: (type: MealType, value: boolean) => void;
+    onScanClick?: () => void;
 }
 
 export default function MealCard({ 
     type, 
     cutoffTime, 
     menu = 'Menu not available', 
-    isLocked = false,
     isEating,
-    onToggle 
+    onToggle,
+    onScanClick
 }: MealCardProps) {
     const { theme } = useTheme();
-    const { user } = useAuth();
     const [timeRemaining, setTimeRemaining] = useState('');
     // DEMO MODE: Never lock the toggle
     const locked = false;
@@ -58,26 +54,6 @@ export default function MealCard({
     const handleToggle = () => {
         onToggle(type, !isEating);
     };
-
-    // Generate QR code data when eating is true
-    const qrData = useMemo(() => {
-        if (!user || !isEating) return null;
-        
-        const now = new Date();
-        const dateStr = now.toISOString().split('T')[0];
-        const timestamp = Date.now();
-        const hash = generateQRHash(user.uid, type, dateStr, timestamp);
-        
-        const payload: QRPayload = {
-            uid: user.uid,
-            meal: type,
-            date: dateStr,
-            ts: timestamp,
-            hash,
-        };
-        
-        return JSON.stringify(payload);
-    }, [user, type, isEating]);
 
     const mealIcons: Record<MealType, string> = {
         breakfast: '🍳',
@@ -132,9 +108,10 @@ export default function MealCard({
                 </button>
             </div>
 
-            {/* Status and Menu */}
+            {/* Status, Scan Icon, and Menu */}
             <div className={`flex gap-4 pt-4 border-t ${theme === 'dark' ? 'border-green-900/30' : 'border-gray-100'
                 }`}>
+                {/* Status */}
                 <div className="flex-1">
                     <p className={`text-xs uppercase tracking-wide mb-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
                         }`}>
@@ -147,6 +124,27 @@ export default function MealCard({
                         {isEating ? 'Eating' : 'Skipped'}
                     </p>
                 </div>
+
+                {/* Scan QR Icon - Shows when Eating */}
+                {isEating && onScanClick && (
+                    <button
+                        onClick={onScanClick}
+                        className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                            theme === 'dark'
+                                ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                                : 'bg-green-100 text-green-600 hover:bg-green-200'
+                        }`}
+                        title="Scan QR for Attendance"
+                    >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                                d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" 
+                            />
+                        </svg>
+                    </button>
+                )}
+
+                {/* Menu */}
                 <div className="flex-1">
                     <p className={`text-xs uppercase tracking-wide mb-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
                         }`}>
@@ -158,34 +156,6 @@ export default function MealCard({
                     </p>
                 </div>
             </div>
-
-            {/* QR Code - Shows when toggle is ON */}
-            {isEating && qrData && (
-                <div className={`mt-4 pt-4 border-t ${theme === 'dark' ? 'border-green-900/30' : 'border-gray-100'}`}>
-                    <div className="flex items-center justify-between mb-3">
-                        <p className={`text-xs uppercase tracking-wide ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                            Your QR Code
-                        </p>
-                        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-500/20 text-green-500 text-xs font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                            Active
-                        </span>
-                    </div>
-                    <div className="flex justify-center p-3 rounded-xl bg-white">
-                        <QRCodeSVG
-                            value={qrData}
-                            size={140}
-                            level="M"
-                            includeMargin={true}
-                            fgColor="#000000"
-                            bgColor="#ffffff"
-                        />
-                    </div>
-                    <p className={`text-xs text-center mt-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                        Show this to mess staff
-                    </p>
-                </div>
-            )}
         </div>
     );
 }

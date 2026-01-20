@@ -1,31 +1,90 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users collection - users can read/write their own data
+
+    // ---------- HELPERS ----------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return request.auth.token.role == "admin";
+    }
+
+    // ---------- USERS ----------
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow read: if request.auth != null; // Admins can read any user
+      allow read: if isSignedIn();
+      allow write: if request.auth.uid == userId;
     }
-    
-    // Meal intents - users can manage their own intents
-    match /mealIntents/{document=**} {
-      allow read, write: if request.auth != null;
+
+    // ---------- MEAL INTENTS ----------
+    match /mealIntents/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if false;
     }
-    
-    // Meal feedback - authenticated users can submit
-    match /mealFeedback/{document=**} {
-      allow read, write: if request.auth != null;
+
+    // ---------- MEAL ATTENDANCE ----------
+    match /mealAttendance/{id} {
+      allow read: if isSignedIn();
+      // Changed: Allow any authenticated user to create/update for demo
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
-    
-    // Meal attendance - for QR scanning system
-    match /mealAttendance/{document=**} {
-      allow read, write: if request.auth != null;
+
+    // ---------- ADMIN ATTENDANCE QR (NEW) ----------
+    match /adminAttendanceQR/{id} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
-    
-    // AI Summaries - read for all authenticated, write for admins
-    match /aiSummaries/{document=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+
+    // ---------- LEAVE REQUESTS ----------
+    match /leaveRequests/{id} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && request.resource.data.reason is string
+        && request.resource.data.startDate is string
+        && request.resource.data.endDate is string;
+
+      // Allow users to delete their OWN leave requests
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow update: if isAdmin();
+    }
+
+    // ---------- MEAL FEEDBACK ----------
+    match /mealFeedback/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // ---------- MEAL IMAGES ----------
+    match /mealImages/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // ---------- AI WASTE ESTIMATES ----------
+    match /aiWasteEstimates/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ---------- AI SUMMARIES ----------
+    match /aiSummaries/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ---------- MESS POINTS ----------
+    match /messPoints/{id} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
     }
   }
 }

@@ -757,3 +757,174 @@ export async function deleteLeaveRequest(leaveId: string): Promise<{ success: bo
     }
 }
 
+// ============== Admin QR Code System ==============
+
+export interface AdminQRPayload {
+    type: 'admin_attendance';
+    mealType: 'breakfast' | 'lunch' | 'dinner';
+    date: string; // YYYY-MM-DD
+    qrId: string; // Unique ID for validation
+    generatedAt: number; // Timestamp
+}
+
+/**
+ * Generate or get existing admin QR for a meal
+ */
+export async function generateAdminMealQR(
+    mealType: 'breakfast' | 'lunch' | 'dinner',
+    date: Date
+): Promise<{ success: boolean; qrData?: string; error?: string }> {
+    try {
+        const dateStr = formatLocalDate(date);
+        const docId = `${mealType}_${dateStr}`;
+        console.log('[Admin QR] Checking for existing QR:', docId);
+
+        // Check if QR already exists for this meal/date
+        const existingDoc = await getDoc(doc(db, 'adminAttendanceQR', docId));
+
+        if (existingDoc.exists()) {
+            const data = existingDoc.data();
+            console.log('[Admin QR] Found existing QR, reusing');
+            return { success: true, qrData: data.qrData };
+        }
+
+        console.log('[Admin QR] No existing QR, generating new one');
+        // Generate new QR payload
+        const qrPayload: AdminQRPayload = {
+            type: 'admin_attendance',
+            mealType,
+            date: dateStr,
+            qrId: `${docId}_${Date.now()}`,
+            generatedAt: Date.now(),
+        };
+
+        const qrData = JSON.stringify(qrPayload);
+        console.log('[Admin QR] Generated payload:', qrPayload);
+
+        // Save to Firestore
+        await setDoc(doc(db, 'adminAttendanceQR', docId), {
+            mealType,
+            date: dateStr,
+            qrData,
+            qrId: qrPayload.qrId,
+            createdAt: serverTimestamp(),
+        });
+        console.log('[Admin QR] Saved to Firestore');
+
+        return { success: true, qrData };
+    } catch (error) {
+        console.error('[Admin QR] Error generating:', error);
+        return { success: false, error: 'Failed to generate QR code' };
+    }
+}
+
+/**
+ * Get current meal type based on time
+ */
+export function getCurrentMealType(): 'breakfast' | 'lunch' | 'dinner' {
+    const hour = new Date().getHours();
+    if (hour >= 6 && hour < 11) return 'breakfast';
+    if (hour >= 11 && hour < 16) return 'lunch';
+    return 'dinner';
+}
+
+/**
+ * Validate admin QR payload
+ */
+export function validateAdminQR(qrData: string): { valid: boolean; payload?: AdminQRPayload; error?: string } {
+    console.log('[Student Scan] Validating QR data:', qrData?.substring(0, 50) + '...');
+    try {
+        const payload = JSON.parse(qrData) as AdminQRPayload;
+        console.log('[Student Scan] Parsed payload:', payload);
+
+        // Check type
+        if (payload.type !== 'admin_attendance') {
+            console.log('[Student Scan] Invalid type:', payload.type);
+            return { valid: false, error: 'Invalid QR type - not an attendance QR' };
+        }
+
+        // Check required fields
+        if (!payload.mealType || !payload.date || !payload.qrId) {
+            console.log('[Student Scan] Missing fields');
+            return { valid: false, error: 'Invalid QR format' };
+        }
+
+        // Check if date is today
+        const today = formatLocalDate(new Date());
+        console.log('[Student Scan] QR date:', payload.date, 'Today:', today);
+        if (payload.date !== today) {
+            return { valid: false, error: `QR is for ${payload.date}, but today is ${today}` };
+        }
+
+        console.log('[Student Scan] QR is valid!');
+        return { valid: true, payload };
+    } catch (err) {
+        console.error('[Student Scan] Parse error:', err);
+        return { valid: false, error: 'Could not read QR code' };
+    }
+}
+
+/**
+ * Mark attendance when student scans admin's QR
+ */
+export async function markAttendanceFromStudentScan(
+    userId: string,
+    userName: string | undefined,
+    userEmail: string | undefined,
+    qrData: string
+): Promise<{ success: boolean; mealType?: string; error?: string }> {
+    try {
+        // Validate QR
+        const validation = validateAdminQR(qrData);
+        if (!validation.valid || !validation.payload) {
+            return { success: false, error: validation.error };
+        }
+
+        const { mealType, date } = validation.payload;
+        const parsedDate = parseLocalDate(date);
+
+        // Check for duplicate attendance today
+        const docId = `${userId}_${mealType}_${date}`;
+        const existingDoc = await getDoc(doc(db, 'mealAttendance', docId));
+        if (existingDoc.exists()) {
+            return { success: false, error: 'You have already marked attendance for this meal' };
+        }
+
+        // Fetch user details if not provided
+        let finalName = userName;
+        let finalEmail = userEmail;
+
+        if (!finalName || !finalEmail) {
+            try {
+                const userDoc = await getDoc(doc(db, 'users', userId));
+                if (userDoc.exists()) {
+                    const data = userDoc.data();
+                    finalName = finalName || data.displayName || data.name;
+                    finalEmail = finalEmail || data.email;
+                }
+            } catch (err) {
+                console.warn('Could not fetch user details:', err);
+            }
+        }
+
+        // Record attendance
+        await setDoc(doc(db, 'mealAttendance', docId), {
+            userId,
+            userName: finalName || 'Unknown Student',
+            userEmail: finalEmail || '',
+            date: Timestamp.fromDate(parsedDate),
+            mealType,
+            scannedAt: serverTimestamp(),
+            scanType: 'student_scan', // Indicates student scanned admin QR
+        });
+
+        // Award points for attendance
+        await addUserPoints(userId, 5, 'meal_attendance');
+
+        return { success: true, mealType };
+    } catch (error) {
+        console.error('Error marking attendance from student scan:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to mark attendance';
+        return { success: false, error: errorMessage };
+    }
+}

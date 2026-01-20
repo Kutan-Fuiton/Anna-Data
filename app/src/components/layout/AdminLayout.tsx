@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
+import AttendanceNotifications from '../admin/AttendanceNotifications';
 
 const navItems = [
     { path: '/admin', icon: '📊', label: 'Dashboard', end: true },
@@ -125,6 +126,9 @@ export default function AdminLayout() {
                     </motion.div>
                 </AnimatePresence>
             </main>
+
+            {/* Real-time Attendance Notifications */}
+            <AttendanceNotifications />
         </div>
     );
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AdminQRDisplay from '../../components/admin/AdminQRDisplay';
 
 type ActiveTab = 'attendance' | 'points' | 'reports';
 
@@ -83,6 +84,8 @@ export default function AdminOperations() {
                     <h1 className="text-2xl font-bold text-gray-900">Operations & Control</h1>
                     <p className="text-sm text-gray-500">Manage attendance, points, and generate reports</p>
                 </div>
+                {/* QR Code Display for Attendance */}
+                <AdminQRDisplay />
             </div>
 
             {/* Tab Navigation */}

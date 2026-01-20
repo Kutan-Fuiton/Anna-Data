@@ -5,6 +5,7 @@ import { submitMealIntent, getMealIntents } from '../../services/firestore';
 import MealCard from '../../components/student/MealCard';
 import LeaveCalendar from '../../components/student/LeaveCalendar';
 import UpcomingLeaves from '../../components/student/UpcomingLeaves';
+import StudentQRScanner from '../../components/student/StudentQRScanner';
 
 export default function StudentHome() {
     const { theme } = useTheme();
@@ -17,6 +18,7 @@ export default function StudentHome() {
     });
     const [isLoading, setIsLoading] = useState(true);
     const [leaveRefreshTrigger, setLeaveRefreshTrigger] = useState(0);
+    const [showScanner, setShowScanner] = useState(false);
 
     // Get current date
     const today = new Date();
@@ -135,6 +137,7 @@ export default function StudentHome() {
                     menu="Aloo Paratha, Curd, Tea"
                     isEating={mealIntents.breakfast}
                     onToggle={handleToggleIntent}
+                    onScanClick={() => setShowScanner(true)}
                 />
                 <MealCard
                     type="lunch"
@@ -142,6 +145,7 @@ export default function StudentHome() {
                     menu="Rajma Chawal, Roti, Salad"
                     isEating={mealIntents.lunch}
                     onToggle={handleToggleIntent}
+                    onScanClick={() => setShowScanner(true)}
                 />
                 <MealCard
                     type="dinner"
@@ -149,9 +153,15 @@ export default function StudentHome() {
                     menu="Paneer Butter Masala, Rice"
                     isEating={mealIntents.dinner}
                     onToggle={handleToggleIntent}
+                    onScanClick={() => setShowScanner(true)}
                 />
             </div>
 
+            {/* QR Scanner Modal */}
+            <StudentQRScanner 
+                isOpen={showScanner} 
+                onClose={() => setShowScanner(false)} 
+            />
 
             {/* Leave Planner Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
