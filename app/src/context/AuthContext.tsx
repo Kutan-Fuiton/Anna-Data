@@ -11,7 +11,7 @@ import {
     onAuthStateChanged,
     updateProfile,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 
 // User role type
@@ -24,6 +24,10 @@ export interface UserData {
     displayName: string | null;
     role: UserRole;
     points?: number;
+    streakDays?: number;
+    bestStreak?: number;
+    lastAttendanceDate?: string; // YYYY-MM-DD
+    totalFeedbacks?: number;
     createdAt?: Date;
 }
 
@@ -110,20 +114,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Listen to auth state changes
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        let unsubscribeDoc: (() => void) | null = null;
+
+        const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
             setUser(firebaseUser);
 
             if (firebaseUser) {
+                // Initial fetch to get the role and ensure doc exists
                 const data = await fetchUserData(firebaseUser);
                 setUserData(data);
+
+                // Setup real-time listener for user document
+                if (unsubscribeDoc) unsubscribeDoc();
+                unsubscribeDoc = onSnapshot(doc(db, 'users', firebaseUser.uid), (docSnap) => {
+                    if (docSnap.exists()) {
+                        setUserData(docSnap.data() as UserData);
+                    }
+                }, (err) => {
+                    console.error('Error listening to user data:', err);
+                });
             } else {
                 setUserData(null);
+                if (unsubscribeDoc) {
+                    unsubscribeDoc();
+                    unsubscribeDoc = null;
+                }
             }
 
             setLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => {
+            unsubscribeAuth();
+            if (unsubscribeDoc) unsubscribeDoc();
+        };
     }, []);
 
     // Login function

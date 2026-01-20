@@ -26,6 +26,7 @@ import { db } from '../config/firebase';
 export interface MealFeedback {
     id?: string;
     userId: string;
+    userName?: string;
     mealType: 'breakfast' | 'lunch' | 'dinner';
     date: Date;
     ratings: {
@@ -61,6 +62,8 @@ export interface UserPoints {
     level: string;
     totalFeedbacks: number;
     streakDays: number;
+    bestStreak: number;
+    lastAttendanceDate?: string;
 }
 
 export interface AISummary {
@@ -68,6 +71,35 @@ export interface AISummary {
     type: string;
     content: string;
     generatedAt: Date;
+}
+
+export interface PointTransaction {
+    id: string;
+    userId: string;
+    type: 'earned' | 'lost';
+    amount: number;
+    reason: string;
+    sourceType?: 'meal_review' | 'attendance' | 'bonus' | 'penalty' | 'redemption' | 'adjustment';
+    sourceId?: string;
+    date: Date;
+    createdAt: Date;
+}
+
+export interface LeaderboardEntry {
+    uid: string;
+    rank: number;
+    name: string;
+    room: string;
+    points: number;
+    isCurrentUser: boolean;
+}
+
+export interface Reward {
+    id: string;
+    name: string;
+    cost: number;
+    icon: string;
+    available: boolean;
 }
 
 // ============== Feedback Operations ==============
@@ -85,8 +117,24 @@ export async function submitMealFeedback(feedback: Omit<MealFeedback, 'id' | 'cr
 
         const docRef = await addDoc(collection(db, 'mealFeedback'), feedbackData);
 
-        // Award points for submitting feedback
-        await addUserPoints(feedback.userId, 10, 'feedback_submission');
+        // --- NEW POINT SYSTEM LOGIC ---
+        // 1. Base points for feedback submission (+10)
+        await addUserPoints(feedback.userId, 10, 'feedback_submission', 'meal_review', docRef.id);
+
+        // 2. Photo upload bonus (+10)
+        if (feedback.imageUrl) {
+            await addUserPoints(feedback.userId, 10, 'photo_upload_bonus', 'meal_review', docRef.id);
+        }
+
+        // 3. Consistent ratings check (Bonus +10 if feedback for last 5 meals)
+        try {
+            const lastFiveFeedback = await getUserFeedbackHistory(feedback.userId, 5);
+            if (lastFiveFeedback.length === 5) {
+                await addUserPoints(feedback.userId, 10, 'consistent_ratings_bonus', 'bonus', `feedback_streak_${docRef.id}`);
+            }
+        } catch (e) {
+            console.error('Error checking consistent ratings:', e);
+        }
 
         return docRef.id;
     } catch (error) {
@@ -183,6 +231,8 @@ export async function getUserPoints(userId: string): Promise<UserPoints> {
                 level: calculateLevel(data.points || 0),
                 totalFeedbacks: data.totalFeedbacks || 0,
                 streakDays: data.streakDays || 0,
+                bestStreak: data.bestStreak || 0,
+                lastAttendanceDate: data.lastAttendanceDate,
             };
         }
 
@@ -191,6 +241,7 @@ export async function getUserPoints(userId: string): Promise<UserPoints> {
             level: 'Bronze',
             totalFeedbacks: 0,
             streakDays: 0,
+            bestStreak: 0,
         };
     } catch (error) {
         console.error('Error fetching user points:', error);
@@ -199,14 +250,21 @@ export async function getUserPoints(userId: string): Promise<UserPoints> {
             level: 'Bronze',
             totalFeedbacks: 0,
             streakDays: 0,
+            bestStreak: 0,
         };
     }
 }
 
 /**
- * Add points to user account
+ * Add points to user account and record transaction
  */
-export async function addUserPoints(userId: string, points: number, reason: string): Promise<void> {
+export async function addUserPoints(
+    userId: string,
+    points: number,
+    reason: string,
+    sourceType?: PointTransaction['sourceType'],
+    sourceId?: string
+): Promise<void> {
     try {
         const userRef = doc(db, 'users', userId);
         const userDoc = await getDoc(userRef);
@@ -220,9 +278,257 @@ export async function addUserPoints(userId: string, points: number, reason: stri
                 totalFeedbacks: reason === 'feedback_submission' ? totalFeedbacks + 1 : totalFeedbacks,
                 lastPointsUpdate: serverTimestamp(),
             });
+
+            // Map internal reasons to human-readable strings
+            const reasonMap: { [key: string]: string } = {
+                'feedback_submission': 'Meal Feedback',
+                'photo_upload_bonus': 'Photo Upload Bonus',
+                'consistent_ratings_bonus': 'Consistent Ratings Reward',
+                'consistent_marking_bonus': '1-Week Consistency Reward',
+                'long_leave_bonus': 'Approved Long Leave Bonus',
+                'no_show_penalty': 'Attendance marked but did not eat',
+                'invalid_submission_penalty': 'Invalid Submission Deduction',
+                'meal_attendance': 'Meal Attendance',
+                'admin_adjustment': 'Admin Adjustment',
+            };
+
+            const displayReason = reasonMap[reason] ||
+                reason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+            // Record transaction
+            await addDoc(collection(db, 'messPoints'), {
+                userId,
+                type: points >= 0 ? 'earned' : 'lost',
+                amount: Math.abs(points),
+                reason: displayReason,
+                sourceType: sourceType || 'adjustment',
+                sourceId: sourceId || null,
+                date: serverTimestamp(),
+                createdAt: serverTimestamp(),
+            });
         }
     } catch (error) {
         console.error('Error adding points:', error);
+    }
+}
+
+export interface UserUsageStats {
+    mealsEaten: number;
+    mealsSkipped: number;
+    intentAccuracy: number;
+}
+
+/**
+ * Calculate logical usage stats for a user
+ */
+export async function getUserUsageStats(userId: string): Promise<UserUsageStats> {
+    try {
+        // 1. Fetch all intents for this user
+        const qIntents = query(
+            collection(db, 'mealIntents'),
+            where('userId', '==', userId)
+        );
+        const intentSnap = await getDocs(qIntents);
+
+        // 2. Fetch all attendance for this user
+        const qAttendance = query(
+            collection(db, 'mealAttendance'),
+            where('userId', '==', userId)
+        );
+        const attendanceSnap = await getDocs(qAttendance);
+
+        // 3. Process attendance into a searchable format: Set<"YYYY-MM-DD_mealType">
+        const attendanceSet = new Set<string>();
+        attendanceSnap.docs.forEach(doc => {
+            const data = doc.data();
+            const date = data.date instanceof Timestamp ? data.date.toDate() : (data.date?.toDate ? data.date.toDate() : new Date(data.date));
+            if (date) {
+                const dateStr = date.toISOString().split('T')[0];
+                attendanceSet.add(`${dateStr}_${data.mealType}`);
+            }
+        });
+
+        const mealsEaten = attendanceSet.size;
+        let totalIntentedMeals = 0;
+        let attendedIntents = 0;
+
+        // 4. Analyze intents
+        intentSnap.docs.forEach(doc => {
+            const data = doc.data() as MealIntent;
+            const date = data.date instanceof Timestamp ? data.date.toDate() : (data.date as any);
+            if (!date) return;
+
+            const dateStr = date.toISOString().split('T')[0];
+
+            // Check each meal type in the intent
+            const mealTypes: ('breakfast' | 'lunch' | 'dinner')[] = ['breakfast', 'lunch', 'dinner'];
+            mealTypes.forEach(type => {
+                const meals = data.meals as any;
+                if (meals && meals[type]) {
+                    totalIntentedMeals++;
+                    if (attendanceSet.has(`${dateStr}_${type}`)) {
+                        attendedIntents++;
+                    }
+                }
+            });
+        });
+
+        const mealsSkipped = Math.max(0, totalIntentedMeals - attendedIntents);
+        const intentAccuracy = totalIntentedMeals > 0
+            ? Math.round((attendedIntents / totalIntentedMeals) * 100)
+            : 100;
+
+        return {
+            mealsEaten,
+            mealsSkipped,
+            intentAccuracy
+        };
+    } catch (error) {
+        console.error('Error calculating usage stats:', error);
+        return { mealsEaten: 0, mealsSkipped: 0, intentAccuracy: 100 };
+    }
+}
+
+/**
+ * Get user's point transactions
+ */
+export async function getPointTransactions(userId: string, limitCount = 10): Promise<PointTransaction[]> {
+    try {
+        // Fetch without orderBy to avoid composite index requirements
+        const q = query(
+            collection(db, 'messPoints'),
+            where('userId', '==', userId),
+            limit(limitCount * 2) // Fetch a bit more to sort and slice
+        );
+
+        const snapshot = await getDocs(q);
+        const transactions = snapshot.docs.map(doc => {
+            const data = doc.data();
+
+            // Handle legacy schema (points instead of amount/type)
+            let amount = data.amount;
+            let type = data.type;
+
+            if (amount === undefined && data.points !== undefined) {
+                amount = Math.abs(data.points);
+                type = data.points >= 0 ? 'earned' : 'lost';
+            }
+
+            return {
+                id: doc.id,
+                ...data,
+                amount: amount || 0,
+                type: type || 'earned',
+                date: data.date?.toDate?.() || data.createdAt?.toDate?.() || (data.date ? new Date(data.date) : new Date()),
+                createdAt: data.createdAt?.toDate?.() || new Date(),
+            };
+        }) as PointTransaction[];
+
+        // Sort descending by date/createdAt in-memory
+        return transactions
+            .sort((a, b) => {
+                const dateA = a.date?.getTime() || 0;
+                const dateB = b.date?.getTime() || 0;
+                return dateB - dateA;
+            })
+            .slice(0, limitCount);
+    } catch (error) {
+        console.error('Error fetching transactions:', error);
+        return [];
+    }
+}
+
+/**
+ * Get leaderboard data (resilient to missing indexes)
+ */
+export async function getLeaderboard(currentUserId: string, limitCount = 10): Promise<LeaderboardEntry[]> {
+    try {
+        // Fetch all students and sort in-memory to avoid composite index requirements
+        const q = query(
+            collection(db, 'users'),
+            where('role', '==', 'student')
+        );
+
+        const snapshot = await getDocs(q);
+        const students = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                uid: doc.id,
+                name: data.displayName || 'Student',
+                room: data.room || 'N/A',
+                points: data.points || 0,
+                isCurrentUser: doc.id === currentUserId,
+            };
+        });
+
+        // Sort descending by points
+        return students
+            .sort((a, b) => b.points - a.points)
+            .slice(0, limitCount)
+            .map((s, index) => ({ ...s, rank: index + 1 }));
+    } catch (error) {
+        console.error('Error fetching leaderboard:', error);
+        return [];
+    }
+}
+
+/**
+ * Get available rewards
+ */
+const DEFAULT_REWARDS: Reward[] = [
+    { id: '1', name: 'Extra Dessert', cost: 100, icon: '🍮', available: true },
+    { id: '2', name: 'Fast Pass', cost: 200, icon: '⚡', available: true },
+    { id: '3', name: 'Special Menu Item', cost: 500, icon: '🍕', available: true },
+    { id: '4', name: 'Free Meal Day', cost: 1000, icon: '🎉', available: false },
+];
+
+export async function getRewards(): Promise<Reward[]> {
+    try {
+        const snapshot = await getDocs(collection(db, 'rewards'));
+        if (snapshot.empty) {
+            return DEFAULT_REWARDS;
+        }
+        return snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+        })) as Reward[];
+    } catch (error) {
+        console.error('Error fetching rewards (using defaults):', error);
+        return DEFAULT_REWARDS;
+    }
+}
+
+/**
+ * Redeem a reward
+ */
+export async function redeemReward(userId: string, reward: Reward): Promise<{ success: boolean; error?: string }> {
+    try {
+        const userRef = doc(db, 'users', userId);
+        const userDoc = await getDoc(userRef);
+
+        if (!userDoc.exists()) return { success: false, error: 'User not found' };
+
+        const currentPoints = userDoc.data().points || 0;
+        if (currentPoints < reward.cost) return { success: false, error: 'Not enough points' };
+
+        // Deduct points and record transaction
+        await updateDoc(userRef, {
+            points: currentPoints - reward.cost,
+        });
+
+        await addDoc(collection(db, 'pointTransactions'), {
+            userId,
+            type: 'lost',
+            amount: reward.cost,
+            reason: `Redeemed ${reward.name}`,
+            date: serverTimestamp(),
+            createdAt: serverTimestamp(),
+        });
+
+        return { success: true };
+    } catch (error) {
+        console.error('Error redeeming reward:', error);
+        return { success: false, error: 'Redemption failed' };
     }
 }
 
@@ -523,7 +829,50 @@ export async function markMealAttendance(
         });
 
         // Award bonus points for actually showing up
-        await addUserPoints(userId, 5, 'meal_attendance');
+        await addUserPoints(userId, 5, 'meal_attendance', 'attendance', docId);
+
+        // Update logical streaks
+        try {
+            const userRef = doc(db, 'users', userId);
+            const userDoc = await getDoc(userRef);
+            if (userDoc.exists()) {
+                const userData = userDoc.data();
+                let streakDays = userData.streakDays || 0;
+                let bestStreak = userData.bestStreak || 0;
+                const lastDate = userData.lastAttendanceDate; // YYYY-MM-DD
+
+                const today = new Date();
+                const todayStr = today.toISOString().split('T')[0];
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+                if (lastDate !== todayStr) {
+                    if (lastDate === yesterdayStr) {
+                        streakDays += 1;
+                    } else {
+                        streakDays = 1;
+                    }
+
+                    if (streakDays > bestStreak) {
+                        bestStreak = streakDays;
+                    }
+
+                    await updateDoc(userRef, {
+                        streakDays,
+                        bestStreak,
+                        lastAttendanceDate: todayStr
+                    });
+
+                    // Award bonus for hitting 7-day milestones
+                    if (streakDays > 0 && streakDays % 7 === 0) {
+                        await addUserPoints(userId, 10, 'consistent_marking_bonus', 'bonus', `streak_${streakDays}_${todayStr}`);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Error updating streak:', e);
+        }
 
         return {
             success: true,
@@ -921,10 +1270,76 @@ export async function markAttendanceFromStudentScan(
         // Award points for attendance
         await addUserPoints(userId, 5, 'meal_attendance');
 
+        // Check for 1-week consistency bonus
+        try {
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            if (userDoc.exists()) {
+                const streakDays = userDoc.data().streakDays || 0;
+                if (streakDays > 0 && streakDays % 7 === 0) {
+                    await addUserPoints(userId, 10, 'consistent_marking_bonus');
+                }
+            }
+        } catch (e) {
+            console.error('Error checking streak bonus:', e);
+        }
+
         return { success: true, mealType };
     } catch (error) {
         console.error('Error marking attendance from student scan:', error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to mark attendance';
         return { success: false, error: errorMessage };
+    }
+}
+
+// ============== Admin Management & Penalties ==============
+
+/**
+ * Approve a leave request and award points if long leave
+ */
+export async function approveLeaveRequest(leaveId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        const leaveRef = doc(db, 'leaves', leaveId);
+        const leaveSnap = await getDoc(leaveRef);
+
+        if (!leaveSnap.exists()) {
+            return { success: false, error: 'Leave request not found' };
+        }
+
+        const data = leaveSnap.data();
+        await updateDoc(leaveRef, { status: 'approved' });
+
+        // Award +10 points if the leave is > 3 days
+        const start = data.startDate.toDate();
+        const end = data.endDate.toDate();
+        const diffTime = Math.abs(end.getTime() - start.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays >= 3) {
+            await addUserPoints(data.userId, 10, 'long_leave_bonus');
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error('Error approving leave:', error);
+        return { success: false, error: 'Failed to approve leave' };
+    }
+}
+
+/**
+ * Flag a student for "Attendance marked but did not eat" (-10 pts)
+ */
+export async function flagNoShow(userId: string): Promise<void> {
+    await addUserPoints(userId, -10, 'no_show_penalty');
+}
+
+/**
+ * Reject a meal feedback for being invalid/fake (-10 pts)
+ */
+export async function rejectMealFeedback(feedbackId: string, userId: string): Promise<void> {
+    try {
+        await updateDoc(doc(db, 'mealFeedback', feedbackId), { status: 'rejected' });
+        await addUserPoints(userId, -10, 'invalid_submission_penalty');
+    } catch (error) {
+        console.error('Error rejecting feedback:', error);
     }
 }

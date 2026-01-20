@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
 import { useTheme } from '../../context/ThemeProvider';
 import { analyzeImage, type AnalysisResponse, type WasteAnalysis } from '../../api';
+import * as firestore from '../../services/firestore';
+import { useAuth } from '../../context/AuthContext';
 
 type MealType = 'lunch' | 'dinner';
 
@@ -45,6 +47,7 @@ const wasteStyles = {
 
 export default function MealReview() {
     const { theme } = useTheme();
+    const { user, userData } = useAuth();
 
     // Auto-select meal based on current time
     const getDefaultMeal = (): MealType => {
@@ -61,7 +64,6 @@ export default function MealReview() {
     });
     const [comment, setComment] = useState('');
     const [plateImage, setPlateImage] = useState<string | null>(null);
-    const [plateFile, setPlateFile] = useState<File | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -88,28 +90,35 @@ export default function MealReview() {
                 alert('Image size should be less than 5MB');
                 return;
             }
-            
-            // Store the file for API submission
-            setPlateFile(file);
-            
+
             // Create preview
             const reader = new FileReader();
             reader.onload = () => {
                 setPlateImage(reader.result as string);
             };
             reader.readAsDataURL(file);
-            
+
             // Analyze the image
             setIsAnalyzing(true);
             setAnalysisError(null);
             setAnalysisResult(null);
-            
+
             try {
                 const result = await analyzeImage(file);
                 setAnalysisResult(result);
             } catch (err) {
                 console.error('Analysis failed:', err);
-                setAnalysisError(err instanceof Error ? err.message : 'Failed to analyze image. Is the backend running?');
+                const errorMessage = err instanceof Error ? err.message : 'Failed to analyze image';
+
+                if (errorMessage === 'INVALID_IMAGE' || (err as any).error === 'INVALID_IMAGE') {
+                    setAnalysisError('INVALID_IMAGE');
+                    // Trigger penalty immediately for invalid submission attempt
+                    if (user) {
+                        firestore.addUserPoints(user.uid, -10, 'invalid_submission_penalty', 'penalty', 'ai_vision_refusal');
+                    }
+                } else {
+                    setAnalysisError(errorMessage);
+                }
             } finally {
                 setIsAnalyzing(false);
             }
@@ -118,7 +127,6 @@ export default function MealReview() {
 
     const removeImage = () => {
         setPlateImage(null);
-        setPlateFile(null);
         setAnalysisResult(null);
         setAnalysisError(null);
         if (fileInputRef.current) {
@@ -127,18 +135,36 @@ export default function MealReview() {
     };
 
     const handleSubmit = async () => {
+        if (!user) {
+            alert('You must be logged in to submit feedback');
+            return;
+        }
+
         setIsSubmitting(true);
-        console.log('Submitting feedback:', { 
-            meal: selectedMeal, 
-            ratings, 
-            comment, 
-            hasImage: !!plateImage,
-            analysis: analysisResult 
-        });
-        setTimeout(() => {
-            setIsSubmitting(false);
+        try {
+            const feedbackData = {
+                userId: user.uid,
+                userName: userData?.displayName || user.displayName || user.email?.split('@')[0] || 'Anonymous',
+                mealType: selectedMeal as any,
+                date: new Date(),
+                ratings,
+                comment,
+                imageUrl: plateImage || undefined,
+                wasteAnalysis: analysisResult?.waste_analysis ? {
+                    wasteLevel: analysisResult.waste_analysis.waste_level,
+                    coveragePercent: analysisResult.waste_analysis.coverage_percent,
+                    foodItems: analysisResult.food_summary || {}
+                } : undefined
+            };
+
+            await firestore.submitMealFeedback(feedbackData);
             setSubmitted(true);
-        }, 1500);
+        } catch (error) {
+            console.error('Failed to submit feedback:', error);
+            alert('Failed to submit feedback. Please try again.');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const ratingLabels = ['Poor', 'Below Avg', 'Average', 'Good', 'Excellent'];
@@ -154,11 +180,11 @@ export default function MealReview() {
     // Insight Card Component - Wastage-Focused Version
     const InsightCard = ({ analysis, insight, foodSummary }: { analysis: WasteAnalysis; insight: string; foodSummary?: Record<string, number> }) => {
         const style = wasteStyles[analysis.waste_level];
-        
+
         // Calculate wastage (food left = waste, so coverage_percent IS the waste percentage)
         const wastePercent = analysis.coverage_percent;
         const totalWastedItems = foodSummary ? Object.values(foodSummary).reduce((a, b) => a + b, 0) : 0;
-        
+
         // Gradient backgrounds for each waste level
         const gradients = {
             NONE: 'from-green-500/30 via-emerald-500/20 to-teal-500/10',
@@ -166,7 +192,7 @@ export default function MealReview() {
             MEDIUM: 'from-yellow-500/30 via-amber-500/20 to-orange-500/10',
             HIGH: 'from-red-500/30 via-rose-500/20 to-pink-500/10',
         };
-        
+
         const progressColors = {
             NONE: 'bg-gradient-to-r from-green-400 to-emerald-500',
             LOW: 'bg-gradient-to-r from-lime-400 to-green-500',
@@ -188,7 +214,7 @@ export default function MealReview() {
             MEDIUM: 'Some food left behind',
             HIGH: 'Significant food wasted',
         };
-        
+
         return (
             <div className={`mt-4 rounded-2xl overflow-hidden border-2 ${style.border} transition-all duration-300 hover:scale-[1.02] hover:shadow-lg`}>
                 {/* Gradient Header - Wastage Focused */}
@@ -207,20 +233,18 @@ export default function MealReview() {
                             </div>
                         </div>
                         {/* Wastage Percentage Badge */}
-                        <div className={`text-center px-4 py-2 rounded-xl ${
-                            theme === 'dark' ? 'bg-black/30' : 'bg-white/70'
-                        } backdrop-blur-sm shadow-inner`}>
+                        <div className={`text-center px-4 py-2 rounded-xl ${theme === 'dark' ? 'bg-black/30' : 'bg-white/70'
+                            } backdrop-blur-sm shadow-inner`}>
                             <div className={`font-bold text-xl ${style.text}`}>
                                 {wastePercent}%
                             </div>
-                            <div className={`text-[10px] uppercase tracking-wide ${
-                                theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                            }`}>
+                            <div className={`text-[10px] uppercase tracking-wide ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                                }`}>
                                 Wasted
                             </div>
                         </div>
                     </div>
-                    
+
                     {/* Wastage Progress Bar */}
                     <div className="mt-4">
                         <div className="flex justify-between mb-1">
@@ -232,7 +256,7 @@ export default function MealReview() {
                             </span>
                         </div>
                         <div className={`h-3 rounded-full ${theme === 'dark' ? 'bg-black/30' : 'bg-white/50'} overflow-hidden`}>
-                            <div 
+                            <div
                                 className={`h-full rounded-full ${progressColors[analysis.waste_level]} transition-all duration-1000 ease-out`}
                                 style={{ width: `${Math.min(wastePercent, 100)}%` }}
                             />
@@ -243,27 +267,25 @@ export default function MealReview() {
                         </div>
                     </div>
                 </div>
-                
+
                 {/* AI Message Body */}
                 <div className={`p-4 ${theme === 'dark' ? 'bg-[#0d1410]' : 'bg-white'}`}>
                     {/* Gemini Insight with quote styling */}
                     <div className={`relative pl-4 border-l-4 ${style.border}`}>
                         <span className={`absolute -left-2 -top-1 text-2xl ${style.text} opacity-50`}>"</span>
-                        <p className={`text-base leading-relaxed italic ${
-                            theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
-                        }`}>
+                        <p className={`text-base leading-relaxed italic ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
+                            }`}>
                             {insight}
                         </p>
                         <span className={`absolute -right-1 bottom-0 text-2xl ${style.text} opacity-50`}>"</span>
                     </div>
-                    
+
                     {/* Wasted Food Items */}
                     {foodSummary && Object.keys(foodSummary).length > 0 && (
                         <div className={`mt-4 pt-4 border-t ${theme === 'dark' ? 'border-white/10' : 'border-gray-200'}`}>
                             <div className="flex items-center justify-between mb-2">
-                                <p className={`text-xs font-semibold uppercase tracking-wider ${
-                                    theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
-                                }`}>
+                                <p className={`text-xs font-semibold uppercase tracking-wider ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+                                    }`}>
                                     🗑️ Wasted Items
                                 </p>
                                 <span className={`text-xs px-2 py-1 rounded-full ${style.bg} ${style.text} font-bold`}>
@@ -272,15 +294,14 @@ export default function MealReview() {
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {Object.entries(foodSummary).map(([item, count]) => (
-                                    <span 
+                                    <span
                                         key={item}
-                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all hover:scale-105 cursor-default border ${
-                                            theme === 'dark' 
-                                                ? `bg-white/5 text-gray-300 hover:bg-white/10 ${style.border}` 
-                                                : `bg-gray-50 text-gray-700 hover:bg-gray-100 ${style.border}`
-                                        }`}
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all hover:scale-105 cursor-default border ${theme === 'dark'
+                                            ? `bg-white/5 text-gray-300 hover:bg-white/10 ${style.border}`
+                                            : `bg-gray-50 text-gray-700 hover:bg-gray-100 ${style.border}`
+                                            }`}
                                     >
-                                        {item} 
+                                        {item}
                                         {count > 1 && (
                                             <span className={`ml-1 px-1.5 py-0.5 rounded-full text-xs ${style.bg} ${style.text} font-bold`}>
                                                 ×{count}
@@ -291,12 +312,11 @@ export default function MealReview() {
                             </div>
                         </div>
                     )}
-                    
+
                     {/* Footer with waste level indicator */}
                     <div className={`mt-4 flex items-center justify-between`}>
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${
-                            theme === 'dark' ? 'bg-white/5' : 'bg-gray-50'
-                        }`}>
+                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${theme === 'dark' ? 'bg-white/5' : 'bg-gray-50'
+                            }`}>
                             <span className={`w-2 h-2 rounded-full ${style.text.replace('text-', 'bg-')} animate-pulse`}></span>
                             <span className={`text-xs font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
                                 Waste Level: <span className={`font-bold ${style.text}`}>{analysis.waste_level}</span>
@@ -319,7 +339,7 @@ export default function MealReview() {
                     Thank you for your feedback!
                 </h2>
                 <p className={`mb-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Your response helps us improve the mess experience.
+                    Your response helps us improve the mess experience. You've earned points for your contribution!
                 </p>
                 <button
                     onClick={() => {
@@ -327,7 +347,6 @@ export default function MealReview() {
                         setRatings({ taste: 3, oil: 3, quantity: 3, hygiene: 3 });
                         setComment('');
                         setPlateImage(null);
-                        setPlateFile(null);
                         setAnalysisResult(null);
                         setAnalysisError(null);
                     }}
@@ -364,10 +383,10 @@ export default function MealReview() {
                             key={meal}
                             onClick={() => setSelectedMeal(meal)}
                             className={`py-3 px-5 rounded-xl font-medium transition-all duration-200 flex items-center gap-2 ${selectedMeal === meal
-                                    ? 'bg-green-600 text-white shadow-lg shadow-green-600/20'
-                                    : theme === 'dark'
-                                        ? 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white border border-green-900/30'
-                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
+                                ? 'bg-green-600 text-white shadow-lg shadow-green-600/20'
+                                : theme === 'dark'
+                                    ? 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white border border-green-900/30'
+                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
                                 }`}
                         >
                             <span className="text-xl">{meal === 'lunch' ? '🍛' : '🍽️'}</span>
@@ -383,8 +402,8 @@ export default function MealReview() {
                 <div className="space-y-5">
                     {/* Ratings Section */}
                     <div className={`rounded-2xl p-5 ${theme === 'dark'
-                            ? 'bg-[#151d17] border border-green-900/30'
-                            : 'bg-white border border-gray-200 shadow-sm'
+                        ? 'bg-[#151d17] border border-green-900/30'
+                        : 'bg-white border border-gray-200 shadow-sm'
                         }`}>
                         <h3 className={`font-semibold text-lg mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'
                             }`}>
@@ -417,10 +436,10 @@ export default function MealReview() {
                                                 key={value}
                                                 onClick={() => handleRatingChange(category.key, value)}
                                                 className={`flex-1 py-2 rounded-lg font-medium text-sm transition-all duration-200 ${ratings[category.key] >= value
-                                                        ? `${ratingColors[value - 1]} text-white`
-                                                        : theme === 'dark'
-                                                            ? 'bg-white/10 text-gray-500 hover:bg-white/15'
-                                                            : 'bg-gray-200 text-gray-400 hover:bg-gray-300'
+                                                    ? `${ratingColors[value - 1]} text-white`
+                                                    : theme === 'dark'
+                                                        ? 'bg-white/10 text-gray-500 hover:bg-white/15'
+                                                        : 'bg-gray-200 text-gray-400 hover:bg-gray-300'
                                                     }`}
                                             >
                                                 {value}
@@ -434,8 +453,8 @@ export default function MealReview() {
 
                     {/* Comment Section */}
                     <div className={`rounded-2xl p-5 ${theme === 'dark'
-                            ? 'bg-[#151d17] border border-green-900/30'
-                            : 'bg-white border border-gray-200 shadow-sm'
+                        ? 'bg-[#151d17] border border-green-900/30'
+                        : 'bg-white border border-gray-200 shadow-sm'
                         }`}>
                         <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-white' : 'text-gray-900'
                             }`}>
@@ -452,8 +471,8 @@ export default function MealReview() {
                             maxLength={500}
                             rows={5}
                             className={`w-full p-3 rounded-xl resize-none text-sm transition-all ${theme === 'dark'
-                                    ? 'bg-white/5 border border-green-900/30 text-white placeholder-gray-500 focus:border-green-500'
-                                    : 'bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 focus:border-green-500'
+                                ? 'bg-white/5 border border-green-900/30 text-white placeholder-gray-500 focus:border-green-500'
+                                : 'bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 focus:border-green-500'
                                 } focus:outline-none focus:ring-2 focus:ring-green-500/20`}
                         />
                         <p className={`text-xs mt-1 text-right ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
@@ -465,8 +484,8 @@ export default function MealReview() {
 
                 {/* RIGHT Column - Full Plate Photo Section */}
                 <div className={`rounded-2xl p-5 h-fit ${theme === 'dark'
-                        ? 'bg-[#151d17] border border-green-900/30'
-                        : 'bg-white border border-gray-200 shadow-sm'
+                    ? 'bg-[#151d17] border border-green-900/30'
+                    : 'bg-white border border-gray-200 shadow-sm'
                     }`}>
                     <h3 className={`font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'
                         }`}>
@@ -476,14 +495,19 @@ export default function MealReview() {
                             (AI Analysis)
                         </span>
                     </h3>
-                    <p className={`text-xs mb-4 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                        Upload a photo of your plate for instant waste analysis powered by AI
-                    </p>
+                    <div className="flex items-center justify-between mb-4">
+                        <p className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                            Upload a photo of your plate for instant waste analysis
+                        </p>
+                        <span className="text-[10px] font-bold bg-green-500/10 text-green-500 px-2 py-0.5 rounded-full border border-green-500/20">
+                            +10 BONUS POINTS
+                        </span>
+                    </div>
 
                     {!plateImage ? (
                         <label className={`flex flex-col items-center justify-center min-h-[280px] rounded-xl border-2 border-dashed cursor-pointer transition-all ${theme === 'dark'
-                                ? 'border-green-900/50 hover:border-green-500/50 bg-white/5 hover:bg-white/10'
-                                : 'border-gray-300 hover:border-green-500 bg-gray-50 hover:bg-gray-100'
+                            ? 'border-green-900/50 hover:border-green-500/50 bg-white/5 hover:bg-white/10'
+                            : 'border-gray-300 hover:border-green-500 bg-gray-50 hover:bg-gray-100'
                             }`}>
                             <div className="text-6xl mb-3 opacity-70">🍽️</div>
                             <span className={`text-lg font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
@@ -514,7 +538,7 @@ export default function MealReview() {
                             >
                                 ✕
                             </button>
-                            
+
                             {/* Analyzing Spinner Overlay */}
                             {isAnalyzing && (
                                 <div className="absolute inset-0 bg-black/60 rounded-xl flex items-center justify-center">
@@ -529,18 +553,37 @@ export default function MealReview() {
                             )}
                         </div>
                     )}
-                    
+
                     {/* Analysis Error */}
                     {analysisError && (
-                        <div className="mt-4 p-4 rounded-xl bg-red-500/20 border border-red-500/50">
-                            <p className="text-red-400 text-sm">⚠️ {analysisError}</p>
+                        <div className={`mt-4 p-4 rounded-xl border ${analysisError === 'INVALID_IMAGE'
+                            ? 'bg-red-500/20 border-red-500 text-red-500'
+                            : 'bg-red-500/10 border-red-500/50 text-red-400'
+                            }`}>
+                            {analysisError === 'INVALID_IMAGE' ? (
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-2 font-bold mb-1">
+                                        <span className="text-xl">🚨</span>
+                                        <span>Deduction: -10 Points</span>
+                                    </div>
+                                    <p className="text-sm">
+                                        This image was rejected because it doesn't appear to be a food plate or a valid meal.
+                                        Points have been deducted for an invalid submission attempt.
+                                    </p>
+                                </div>
+                            ) : (
+                                <p className="text-sm uppercase font-bold mb-1">⚠️ Analysis Failed</p>
+                            )}
+                            {analysisError !== 'INVALID_IMAGE' && (
+                                <p className="text-xs opacity-80">{analysisError}</p>
+                            )}
                         </div>
                     )}
-                    
+
                     {/* Analysis Result Card */}
                     {analysisResult && (
-                        <InsightCard 
-                            analysis={analysisResult.waste_analysis} 
+                        <InsightCard
+                            analysis={analysisResult.waste_analysis}
                             insight={analysisResult.user_insight}
                             foodSummary={analysisResult.food_summary}
                         />
@@ -553,8 +596,8 @@ export default function MealReview() {
                 onClick={handleSubmit}
                 disabled={isSubmitting || isAnalyzing}
                 className={`w-full py-4 rounded-xl font-semibold text-lg transition-all duration-200 flex items-center justify-center gap-2 ${isSubmitting || isAnalyzing
-                        ? 'bg-gray-500 cursor-not-allowed'
-                        : 'bg-green-600 hover:bg-green-500 shadow-lg shadow-green-600/20 hover:shadow-green-500/30'
+                    ? 'bg-gray-500 cursor-not-allowed'
+                    : 'bg-green-600 hover:bg-green-500 shadow-lg shadow-green-600/20 hover:shadow-green-500/30'
                     } text-white`}
             >
                 {isSubmitting ? (

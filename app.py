@@ -250,9 +250,18 @@ async def analyze_food_waste(image: UploadFile = File(...)):
         user_insight = generate_user_insight(waste_analysis, food_counts)
         admin_insight = generate_admin_insight(waste_analysis, food_counts)
         
-        # Generate AI-powered insights using Gemini (if configured)
-        ai_user_insight = await gemini_service.generate_user_insight(waste_analysis, food_counts)
-        ai_admin_insight = await gemini_service.generate_admin_insight(waste_analysis, food_counts)
+        # Generate AI-powered insights using Gemini (passing raw image for verification)
+        ai_user_insight = await gemini_service.generate_user_insight(waste_analysis, food_counts, contents)
+        
+        # Check for rejection
+        if ai_user_insight == "INVALID_IMAGE":
+            return JSONResponse({
+                "success": False,
+                "error": "INVALID_IMAGE",
+                "message": "The uploaded photo does not appear to be a food plate. Please upload a clear photo of your meal."
+            }, status_code=400)
+
+        ai_admin_insight = await gemini_service.generate_admin_insight(waste_analysis, food_counts, contents)
         
         return JSONResponse({
             "success": True,

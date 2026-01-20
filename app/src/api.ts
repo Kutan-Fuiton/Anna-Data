@@ -71,7 +71,9 @@ export async function analyzeImage(imageFile: File): Promise<AnalysisResponse> {
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: 'Analysis failed' }));
-        throw new Error(errorData.detail || 'Failed to analyze image');
+        const error = new Error(errorData.message || errorData.detail || 'Failed to analyze image');
+        (error as any).error = errorData.error;
+        throw error;
     }
 
     return response.json();

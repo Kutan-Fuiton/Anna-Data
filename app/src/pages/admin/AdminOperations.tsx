@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import AdminQRDisplay from '../../components/admin/AdminQRDisplay';
+import * as firestore from '../../services/firestore';
 
 type ActiveTab = 'attendance' | 'points' | 'reports';
 
@@ -76,6 +77,26 @@ export default function AdminOperations() {
         { id: '4', name: 'Free Meal Day', cost: 1000, available: false, redeemed: 2 },
     ];
 
+    const handleApproveLeave = async (leaveId: string) => {
+        try {
+            await firestore.approveLeaveRequest(leaveId);
+            alert('Leave approved and points awarded!');
+        } catch (error) {
+            console.error('Error approving leave:', error);
+        }
+    };
+
+    const handleNoShowPenalty = async (userId: string) => {
+        if (confirm('Deduct 10 points for no-show?')) {
+            try {
+                await firestore.flagNoShow(userId);
+                alert('Points deducted successfully');
+            } catch (error) {
+                console.error('Error deducting points:', error);
+            }
+        }
+    };
+
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
             {/* Header */}
@@ -99,8 +120,8 @@ export default function AdminOperations() {
                         key={tab.key}
                         onClick={() => setActiveTab(tab.key as ActiveTab)}
                         className={`px-5 py-2.5 text-sm font-medium transition-colors ${activeTab === tab.key
-                                ? 'bg-[#0d2137] text-white'
-                                : 'text-gray-600 hover:bg-gray-100'
+                            ? 'bg-[#0d2137] text-white'
+                            : 'text-gray-600 hover:bg-gray-100'
                             }`}
                     >
                         {tab.label}
@@ -147,11 +168,17 @@ export default function AdminOperations() {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <span className={`text-xs px-2 py-0.5 ${leave.status === 'active'
-                                                    ? 'bg-green-100 text-green-700'
-                                                    : 'bg-gray-100 text-gray-600'
+                                                ? 'bg-green-100 text-green-700'
+                                                : 'bg-gray-100 text-gray-600'
                                                 }`}>
                                                 {leave.days}d • {leave.status}
                                             </span>
+                                            <button
+                                                onClick={() => handleApproveLeave(leave.id)}
+                                                className="text-xs text-green-600 hover:text-green-700 font-medium"
+                                            >
+                                                Approve
+                                            </button>
                                             <button className="text-xs text-red-600 hover:text-red-700">Cancel</button>
                                         </div>
                                     </div>
@@ -177,6 +204,12 @@ export default function AdminOperations() {
                                                 <p className="text-sm font-semibold text-red-600">{student.noShowCount}x no-shows</p>
                                                 <p className="text-xs text-gray-500">-{student.pointsDeducted} pts</p>
                                             </div>
+                                            <button
+                                                onClick={() => handleNoShowPenalty(student.id)}
+                                                className="text-xs bg-red-500 text-white border border-red-600 px-2 py-1 hover:bg-red-600"
+                                            >
+                                                Deduct 10
+                                            </button>
                                             <button className="text-xs bg-white border border-gray-200 px-2 py-1 hover:bg-gray-50">
                                                 Override
                                             </button>
@@ -228,8 +261,8 @@ export default function AdminOperations() {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <button className={`text-xs px-3 py-1 ${reward.available
-                                                ? 'bg-green-100 text-green-700'
-                                                : 'bg-gray-100 text-gray-500'
+                                            ? 'bg-green-100 text-green-700'
+                                            : 'bg-gray-100 text-gray-500'
                                             }`}>
                                             {reward.available ? 'Active' : 'Disabled'}
                                         </button>

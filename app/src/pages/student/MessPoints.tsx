@@ -1,80 +1,169 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeProvider';
-
-interface PointTransaction {
-    id: string;
-    type: 'earned' | 'lost';
-    amount: number;
-    reason: string;
-    date: Date;
-}
-
-interface LeaderboardEntry {
-    rank: number;
-    name: string;
-    room: string;
-    points: number;
-    isCurrentUser: boolean;
-}
-
-interface Reward {
-    id: string;
-    name: string;
-    cost: number;
-    icon: string;
-    available: boolean;
-}
+import { useAuth } from '../../context/AuthContext';
+import type { PointTransaction, LeaderboardEntry, Reward, UserUsageStats } from '../../services/firestore';
+import * as firestore from '../../services/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 
 export default function MessPoints() {
     const { theme } = useTheme();
+    const { userData, user } = useAuth();
     const [activeTab, setActiveTab] = useState<'history' | 'leaderboard' | 'rewards'>('history');
     const [showAllLeaderboard, setShowAllLeaderboard] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [redeeming, setRedeeming] = useState<string | null>(null);
 
-    // Mock data
-    const currentPoints = 850;
-    const totalEarned = 1200;
-    const totalLost = 350;
+    // Dynamic data state
+    const [transactions, setTransactions] = useState<PointTransaction[]>([]);
+    const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+    const [rewards, setRewards] = useState<Reward[]>([]);
+    const [usageStats, setUsageStats] = useState<UserUsageStats>({ mealsEaten: 0, mealsSkipped: 0, intentAccuracy: 100 });
+
+    const currentPoints = userData?.points || 0;
+
+    // Calculated from transactions for the UI
+    const totalEarned = transactions
+        .filter(t => t.type === 'earned')
+        .reduce((sum, t) => sum + t.amount, 0);
+    const totalLost = transactions
+        .filter(t => t.type === 'lost')
+        .reduce((sum, t) => sum + t.amount, 0);
 
     const stats = {
-        daysEaten: 45,
-        daysSkipped: 5,
-        intentAccuracy: 92,
-        currentStreak: 12,
-        longestStreak: 18,
+        daysEaten: usageStats.mealsEaten,
+        daysSkipped: usageStats.mealsSkipped,
+        intentAccuracy: usageStats.intentAccuracy,
+        currentStreak: userData?.streakDays || 0,
+        longestStreak: userData?.bestStreak || 0,
     };
 
-    const transactions: PointTransaction[] = [
-        { id: '1', type: 'earned', amount: 10, reason: 'Meal attendance - Lunch', date: new Date(2026, 0, 16) },
-        { id: '2', type: 'earned', amount: 10, reason: 'Meal attendance - Dinner', date: new Date(2026, 0, 16) },
-        { id: '3', type: 'lost', amount: 50, reason: 'No-show penalty', date: new Date(2026, 0, 15) },
-        { id: '4', type: 'earned', amount: 10, reason: 'Meal attendance - Lunch', date: new Date(2026, 0, 15) },
-        { id: '5', type: 'earned', amount: 25, reason: 'Weekly feedback bonus', date: new Date(2026, 0, 14) },
-        { id: '6', type: 'lost', amount: 30, reason: 'Late leave cancellation', date: new Date(2026, 0, 12) },
-    ];
+    useEffect(() => {
+        if (!user) return;
 
-    const leaderboard: LeaderboardEntry[] = [
-        { rank: 1, name: 'Priya Sharma', room: '201-A', points: 1250, isCurrentUser: false },
-        { rank: 2, name: 'Amit Kumar', room: '305-C', points: 1180, isCurrentUser: false },
-        { rank: 3, name: 'Sneha Patel', room: '102-B', points: 1050, isCurrentUser: false },
-        { rank: 4, name: 'Rahul Sharma', room: '304-B', points: 850, isCurrentUser: true },
-        { rank: 5, name: 'Vikram Singh', room: '408-A', points: 820, isCurrentUser: false },
-        { rank: 6, name: 'Ananya Gupta', room: '203-C', points: 780, isCurrentUser: false },
-        { rank: 7, name: 'Neha Verma', room: '105-D', points: 750, isCurrentUser: false },
-        { rank: 8, name: 'Arjun Reddy', room: '402-B', points: 720, isCurrentUser: false },
-        { rank: 9, name: 'Kavita Nair', room: '301-A', points: 690, isCurrentUser: false },
-        { rank: 10, name: 'Ravi Mehta', room: '207-C', points: 650, isCurrentUser: false },
-    ];
+        setLoading(true);
+        // Safety timeout to prevent infinite loading
+        const timeout = setTimeout(() => setLoading(false), 5000);
 
-    const rewards: Reward[] = [
-        { id: '1', name: 'Extra Dessert', cost: 100, icon: '🍮', available: true },
-        { id: '2', name: 'Fast Pass', cost: 200, icon: '⚡', available: true },
-        { id: '3', name: 'Special Menu Item', cost: 500, icon: '🍕', available: true },
-        { id: '4', name: 'Free Meal Day', cost: 1000, icon: '🎉', available: false },
-    ];
+        // 1. Listen to Transactions
+        const qTx = query(
+            collection(db, 'messPoints'),
+            where('userId', '==', user.uid)
+        );
+        const unsubscribeTx = onSnapshot(qTx, (snapshot) => {
+            const txData = snapshot.docs.map(doc => {
+                const data = doc.data();
+
+                // Handle legacy schema (points instead of amount/type)
+                let amount = data.amount;
+                let type = data.type;
+
+                if (amount === undefined && data.points !== undefined) {
+                    amount = Math.abs(data.points);
+                    type = data.points >= 0 ? 'earned' : 'lost';
+                }
+
+                return {
+                    id: doc.id,
+                    ...data,
+                    amount: amount || 0,
+                    type: type || 'earned',
+                    date: data.date?.toDate?.() || data.createdAt?.toDate?.() || (data.date ? new Date(data.date) : new Date()),
+                    createdAt: data.createdAt?.toDate?.() || new Date(),
+                };
+            }) as PointTransaction[];
+
+            // Sort in-memory
+            setTransactions(txData.sort((a, b) => {
+                const dateA = a.date instanceof Date ? a.date.getTime() : 0;
+                const dateB = b.date instanceof Date ? b.date.getTime() : 0;
+                return dateB - dateA;
+            }));
+            setLoading(false);
+            clearTimeout(timeout);
+        },
+            (error) => {
+                console.error('Transactions listener error:', error);
+                setLoading(false);
+                clearTimeout(timeout);
+            }
+        );
+
+        // 2. Listen to Leaders
+        // Note: For a real huge leaderboard, we'd use a cloud function or better query
+        const qLb = query(
+            collection(db, 'users'),
+            where('role', '==', 'student')
+        );
+        const unsubscribeLb = onSnapshot(qLb,
+            (snapshot) => {
+                try {
+                    const lbData = snapshot.docs.map(doc => {
+                        const data = doc.data();
+                        return {
+                            uid: doc.id,
+                            name: data.displayName || data.name || 'Student',
+                            room: data.room || 'N/A',
+                            points: data.points || 0,
+                            isCurrentUser: doc.id === user.uid,
+                        };
+                    }).sort((a, b) => b.points - a.points)
+                        .slice(0, 50)
+                        .map((s, index) => ({ ...s, rank: index + 1 }));
+
+                    setLeaderboard(lbData);
+                } catch (err) {
+                    console.error('Leaderboard parsing error:', err);
+                }
+            },
+            (error) => {
+                console.error('Leaderboard listener error:', error);
+            }
+        );
+
+        // 3. One-time fetch for rewards and usage stats
+        firestore.getRewards().then(setRewards).catch(console.error);
+        firestore.getUserUsageStats(user.uid).then(setUsageStats).catch(console.error);
+
+        return () => {
+            unsubscribeTx();
+            unsubscribeLb();
+            clearTimeout(timeout);
+        };
+    }, [user]);
+
+    const handleRedeem = async (reward: Reward) => {
+        if (!user) return;
+        setRedeeming(reward.id);
+        try {
+            const result = await firestore.redeemReward(user.uid, reward);
+            if (result.success) {
+                // Refresh data
+                const txData = await firestore.getPointTransactions(user.uid);
+                setTransactions(txData);
+                // userData will be updated by AuthContext when points change in Firestore
+            } else {
+                alert(result.error || 'Failed to redeem reward');
+            }
+        } catch (error) {
+            console.error('Redemption error:', error);
+        } finally {
+            setRedeeming(null);
+        }
+    };
 
     const formatDate = (date: Date) => {
         return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
     };
+
+    if (loading && transactions.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+                <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+                <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}>Loading your points data...</p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-5">
@@ -162,11 +251,11 @@ export default function MessPoints() {
                                 }`}>
                                 <div
                                     className="h-2 rounded-full bg-green-500 transition-all"
-                                    style={{ width: `${(stats.daysEaten / (stats.daysEaten + stats.daysSkipped)) * 100}%` }}
+                                    style={{ width: `${(stats.daysEaten + stats.daysSkipped) === 0 ? 0 : (stats.daysEaten / (stats.daysEaten + stats.daysSkipped)) * 100}%` }}
                                 />
                             </div>
                             <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                                {Math.round((stats.daysEaten / (stats.daysEaten + stats.daysSkipped)) * 100)}% attendance rate
+                                {(stats.daysEaten + stats.daysSkipped) === 0 ? 0 : Math.round((stats.daysEaten / (stats.daysEaten + stats.daysSkipped)) * 100)}% attendance rate
                             </p>
                         </div>
                     </div>
@@ -252,108 +341,136 @@ export default function MessPoints() {
                 <div className="p-5">
                     {activeTab === 'history' && (
                         <div className="space-y-3">
-                            {transactions.map((tx) => (
-                                <div key={tx.id} className={`flex items-center justify-between p-3 rounded-xl ${theme === 'dark' ? 'bg-white/5' : 'bg-gray-50'
-                                    }`}>
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${tx.type === 'earned'
-                                            ? 'bg-green-500/20 text-green-500'
-                                            : 'bg-red-500/20 text-red-500'
-                                            }`}>
-                                            {tx.type === 'earned' ? '↑' : '↓'}
-                                        </div>
-                                        <div>
-                                            <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                                                {tx.reason}
-                                            </p>
-                                            <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                                                {formatDate(tx.date)}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <span className={`font-bold ${tx.type === 'earned' ? 'text-green-500' : 'text-red-500'
+                            {transactions.length > 0 ? (
+                                transactions.map((tx) => (
+                                    <div key={tx.id} className={`flex items-center justify-between p-3 rounded-xl ${theme === 'dark' ? 'bg-white/5' : 'bg-gray-50'
                                         }`}>
-                                        {tx.type === 'earned' ? '+' : '-'}{tx.amount}
-                                    </span>
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${tx.type === 'earned'
+                                                ? 'bg-green-500/20 text-green-500'
+                                                : 'bg-red-500/20 text-red-500'
+                                                }`}>
+                                                {tx.type === 'earned' ? '↑' : '↓'}
+                                            </div>
+                                            <div>
+                                                <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                                                    {tx.reason}
+                                                </p>
+                                                <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                    {formatDate(tx.date)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <span className={`font-bold ${tx.type === 'earned' ? 'text-green-500' : 'text-red-500'
+                                            }`}>
+                                            {tx.type === 'earned' ? '+' : '-'}{tx.amount}
+                                        </span>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-center py-10">
+                                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                                        No transactions yet. Start participating in mess activities to earn points!
+                                    </p>
                                 </div>
-                            ))}
+                            )}
                         </div>
                     )}
 
                     {activeTab === 'leaderboard' && (
                         <div className="space-y-2">
-                            {(showAllLeaderboard ? leaderboard : leaderboard.slice(0, 5)).map((entry) => (
-                                <div key={entry.rank} className={`flex items-center justify-between p-3 rounded-xl ${entry.isCurrentUser
-                                    ? theme === 'dark'
-                                        ? 'bg-green-900/30 border border-green-500/30'
-                                        : 'bg-green-50 border border-green-200'
-                                    : theme === 'dark' ? 'bg-white/5' : 'bg-gray-50'
-                                    }`}>
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${entry.rank === 1 ? 'bg-yellow-500 text-white' :
-                                            entry.rank === 2 ? 'bg-gray-400 text-white' :
-                                                entry.rank === 3 ? 'bg-orange-600 text-white' :
-                                                    theme === 'dark' ? 'bg-white/10 text-gray-400' : 'bg-gray-200 text-gray-500'
+                            {leaderboard.length > 0 ? (
+                                <>
+                                    {(showAllLeaderboard ? leaderboard : leaderboard.slice(0, 5)).map((entry) => (
+                                        <div key={entry.uid} className={`flex items-center justify-between p-3 rounded-xl ${entry.isCurrentUser
+                                            ? theme === 'dark'
+                                                ? 'bg-green-900/30 border border-green-500/30'
+                                                : 'bg-green-50 border border-green-200'
+                                            : theme === 'dark' ? 'bg-white/5' : 'bg-gray-50'
                                             }`}>
-                                            {entry.rank}
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${entry.rank === 1 ? 'bg-yellow-500 text-white' :
+                                                    entry.rank === 2 ? 'bg-gray-400 text-white' :
+                                                        entry.rank === 3 ? 'bg-orange-600 text-white' :
+                                                            theme === 'dark' ? 'bg-white/10 text-gray-400' : 'bg-gray-200 text-gray-500'
+                                                    }`}>
+                                                    {entry.rank}
+                                                </div>
+                                                <div>
+                                                    <p className={`font-medium ${entry.isCurrentUser
+                                                        ? 'text-green-500'
+                                                        : theme === 'dark' ? 'text-white' : 'text-gray-900'
+                                                        }`}>
+                                                        {entry.name} {entry.isCurrentUser && '(You)'}
+                                                    </p>
+                                                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                        Room {entry.room}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <span className={`font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                                                {entry.points} pts
+                                            </span>
                                         </div>
-                                        <div>
-                                            <p className={`font-medium ${entry.isCurrentUser
-                                                ? 'text-green-500'
-                                                : theme === 'dark' ? 'text-white' : 'text-gray-900'
-                                                }`}>
-                                                {entry.name} {entry.isCurrentUser && '(You)'}
-                                            </p>
-                                            <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                                                Room {entry.room}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <span className={`font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                                        {entry.points} pts
-                                    </span>
+                                    ))}
+                                    {leaderboard.length > 5 && (
+                                        <button
+                                            onClick={() => setShowAllLeaderboard(!showAllLeaderboard)}
+                                            className={`w-full py-3 mt-2 rounded-xl font-medium transition-all ${theme === 'dark'
+                                                ? 'bg-white/5 text-green-400 hover:bg-white/10'
+                                                : 'bg-gray-100 text-green-600 hover:bg-gray-200'
+                                                }`}
+                                        >
+                                            {showAllLeaderboard ? 'Show Less ↑' : `Show More (${leaderboard.length - 5} more) ↓`}
+                                        </button>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="text-center py-10">
+                                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                                        Leaderboard is currently empty.
+                                    </p>
                                 </div>
-                            ))}
-                            {leaderboard.length > 5 && (
-                                <button
-                                    onClick={() => setShowAllLeaderboard(!showAllLeaderboard)}
-                                    className={`w-full py-3 mt-2 rounded-xl font-medium transition-all ${theme === 'dark'
-                                            ? 'bg-white/5 text-green-400 hover:bg-white/10'
-                                            : 'bg-gray-100 text-green-600 hover:bg-gray-200'
-                                        }`}
-                                >
-                                    {showAllLeaderboard ? 'Show Less ↑' : `Show More (${leaderboard.length - 5} more) ↓`}
-                                </button>
                             )}
                         </div>
                     )}
 
                     {activeTab === 'rewards' && (
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                            {rewards.map((reward) => (
-                                <div key={reward.id} className={`p-4 rounded-xl text-center ${theme === 'dark' ? 'bg-white/5' : 'bg-gray-50'
-                                    }`}>
-                                    <span className="text-4xl block mb-2">{reward.icon}</span>
-                                    <p className={`font-medium mb-1 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                                        {reward.name}
+                            {rewards.length > 0 ? (
+                                rewards.map((reward) => (
+                                    <div key={reward.id} className={`p-4 rounded-xl text-center ${theme === 'dark' ? 'bg-white/5' : 'bg-gray-50'
+                                        }`}>
+                                        <span className="text-4xl block mb-2">{reward.icon}</span>
+                                        <p className={`font-medium mb-1 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                                            {reward.name}
+                                        </p>
+                                        <p className={`text-sm mb-3 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                                            {reward.cost} points
+                                        </p>
+                                        <button
+                                            onClick={() => handleRedeem(reward)}
+                                            disabled={currentPoints < reward.cost || !reward.available || redeeming === reward.id}
+                                            className={`w-full py-2 rounded-lg text-sm font-medium transition-all ${currentPoints >= reward.cost && reward.available
+                                                ? 'bg-green-600 hover:bg-green-500 text-white'
+                                                : theme === 'dark'
+                                                    ? 'bg-white/10 text-gray-500 cursor-not-allowed'
+                                                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                                }`}
+                                        >
+                                            {redeeming === reward.id ? 'Redeeming...' :
+                                                !reward.available ? 'Unavailable' :
+                                                    currentPoints < reward.cost ? 'Not enough' : 'Redeem'}
+                                        </button>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="col-span-full text-center py-10">
+                                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                                        No rewards available at the moment.
                                     </p>
-                                    <p className={`text-sm mb-3 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                                        {reward.cost} points
-                                    </p>
-                                    <button
-                                        disabled={currentPoints < reward.cost || !reward.available}
-                                        className={`w-full py-2 rounded-lg text-sm font-medium transition-all ${currentPoints >= reward.cost && reward.available
-                                            ? 'bg-green-600 hover:bg-green-500 text-white'
-                                            : theme === 'dark'
-                                                ? 'bg-white/10 text-gray-500 cursor-not-allowed'
-                                                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                            }`}
-                                    >
-                                        {!reward.available ? 'Unavailable' :
-                                            currentPoints < reward.cost ? 'Not enough' : 'Redeem'}
-                                    </button>
                                 </div>
-                            ))}
+                            )}
                         </div>
                     )}
                 </div>
