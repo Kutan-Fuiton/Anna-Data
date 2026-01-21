@@ -4,7 +4,7 @@ import {
     LineChart, Line, PieChart, Pie, Cell, BarChart, Bar, Legend
 } from 'recharts';
 import {
-    getAnalytics, getLastUpdatedTimestamp,
+    getAnalytics,
     type AnalyticsSummary, type WasteLevel
 } from '../../services/analyticsService';
 import {
@@ -151,8 +151,8 @@ export default function AdminInsights() {
                         onClick={handleRegenerate}
                         disabled={isRegenerating}
                         className={`flex items-center gap-2 px-4 py-2 text-white text-sm font-medium transition-colors ${isRegenerating
-                                ? 'bg-gray-400 cursor-not-allowed'
-                                : 'bg-[#0d2137] hover:bg-[#152d4a]'
+                            ? 'bg-gray-400 cursor-not-allowed'
+                            : 'bg-[#0d2137] hover:bg-[#152d4a]'
                             }`}
                     >
                         {isRegenerating ? (
