@@ -12,16 +12,13 @@ services:
         value: 3.10.0
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/service-account.json
-    secretFiles:
-      - key: service-account.json
-        name: service-account.json
 
   # Frontend (Static Site)
   - type: web
     name: mess-o-meter-web
     env: static
     buildCommand: cd app && npm install && npm run build
-    publishPath: app/dist
+    staticPublishPath: app/dist
     envVars:
       - key: VITE_API_URL
         fromService:
