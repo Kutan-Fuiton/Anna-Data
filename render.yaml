@@ -17,7 +17,7 @@ services:
         name: service-account.json
 
   # Frontend (Static Site)
-  - type: static
+  - type: static_site
     name: mess-o-meter-web
     env: static
     buildCommand: cd app && npm install && npm run build
