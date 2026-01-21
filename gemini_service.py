@@ -22,7 +22,7 @@ class GeminiInsightGenerator:
             print("⚠️ Gemini API key not configured. AI insights will be disabled.")
         else:
             genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel("gemini-3-flash-preview")
+            self.model = genai.GenerativeModel("gemini-2.0-flash-exp")
             self.enabled = True
             print("✓ Gemini AI service initialized successfully")
     
@@ -68,27 +68,56 @@ Provide:
 Use professional but accessible language. Format as bullet points with emojis.
 Respond with ONLY the report, no extra headers or text."""
 
-    async def generate_user_insight(self, analysis: Dict, food_counts: Dict) -> Optional[str]:
-        """Generate a human-friendly message for the user."""
+    async def generate_user_insight(self, analysis: Dict, food_counts: Dict, image_bytes: Optional[bytes] = None) -> Optional[str]:
+        """Generate a human-friendly message for the user, with image validation."""
         if not self.enabled:
             return None
         
         try:
             prompt = self._build_user_prompt(analysis, food_counts)
-            response = await self.model.generate_content_async(prompt)
+            
+            content = [prompt]
+            if image_bytes:
+                content.append({
+                    "mime_type": "image/jpeg",
+                    "data": image_bytes
+                })
+            
+            # Add strict validation instruction to the prompt context if image is provided
+            if image_bytes:
+                validation_prompt = """
+                CRITICAL VALIDATION RULE:
+                Before generating the insight, look at the image carefully.
+                This app is strictly for analyzing food plates and meals.
+                
+                If this image is NOT a photo of a food plate, a meal, or cafeteria food:
+                (e.g., if it's an animal, a screenshot of an app, a computer screen, a person's face, a landscape, text, or any random object)
+                Respond with EXACTLY the word: INVALID_IMAGE
+                Do not provide any other text, explanation, or polite message.
+                """
+                content[0] = validation_prompt + "\n\n" + prompt
+
+            response = await self.model.generate_content_async(content)
             return response.text.strip()
         except Exception as e:
             print(f"⚠️ Gemini user insight failed: {e}")
             return None
 
-    async def generate_admin_insight(self, analysis: Dict, food_counts: Dict) -> Optional[str]:
+    async def generate_admin_insight(self, analysis: Dict, food_counts: Dict, image_bytes: Optional[bytes] = None) -> Optional[str]:
         """Generate detailed insight for admin/management."""
         if not self.enabled:
             return None
         
         try:
             prompt = self._build_admin_prompt(analysis, food_counts)
-            response = await self.model.generate_content_async(prompt)
+            content = [prompt]
+            if image_bytes:
+                content.append({
+                    "mime_type": "image/jpeg",
+                    "data": image_bytes
+                })
+                
+            response = await self.model.generate_content_async(content)
             return response.text.strip()
         except Exception as e:
             print(f"⚠️ Gemini admin insight failed: {e}")

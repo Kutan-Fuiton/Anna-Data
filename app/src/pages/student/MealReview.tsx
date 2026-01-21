@@ -145,7 +145,7 @@ export default function MealReview() {
             const feedbackData = {
                 userId: user.uid,
                 userName: userData?.displayName || user.displayName || user.email?.split('@')[0] || 'Anonymous',
-                mealType: selectedMeal as any,
+                mealType: selectedMeal as firestore.MealFeedback['mealType'],
                 date: new Date(),
                 ratings,
                 comment,
