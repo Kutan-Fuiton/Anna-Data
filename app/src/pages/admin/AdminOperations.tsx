@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import AdminQRDisplay from '../../components/admin/AdminQRDisplay';
 import LiveAttendance from '../../components/admin/LiveAttendance';
+import { useAuth } from '../../context/AuthContext';
 import * as firestore from '../../services/firestore';
+import type { DayAttendanceStats, MealTimeSettings } from '../../services/firestore';
 
-const { getAllLeaves } = firestore;
+const { getAllLeaves, get7DayAttendance, getMealTimeSettings, updateMealTimeSettings, DEFAULT_MEAL_TIME_SETTINGS } = firestore;
 
 type ActiveTab = 'attendance' | 'points' | 'reports';
 
@@ -35,25 +37,43 @@ interface Reward {
 }
 
 export default function AdminOperations() {
+    const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<ActiveTab>('attendance');
     const [activeLeaves, setActiveLeaves] = useState<AdminLeaveDisplay[]>([]);
-    const [isLoadingLeaves, setIsLoadingLeaves] = useState(true);
+    const [forecast, setForecast] = useState<DayAttendanceStats[]>([]);
+    const [mealTimeSettings, setMealTimeSettings] = useState<MealTimeSettings>(DEFAULT_MEAL_TIME_SETTINGS);
+    const [isSavingSettings, setIsSavingSettings] = useState(false);
+    const [settingsSaved, setSettingsSaved] = useState(false);
 
-    // Attendance Forecast (next 7 days)
-    const forecast = [
-        { date: 'Today', day: 'Tue', lunch: 820, dinner: 780 },
-        { date: 'Jan 22', day: 'Wed', lunch: 650, dinner: 620 },
-        { date: 'Jan 23', day: 'Thu', lunch: 580, dinner: 550 },
-        { date: 'Jan 24', day: 'Fri', lunch: 890, dinner: 850 },
-        { date: 'Jan 25', day: 'Sat', lunch: 870, dinner: 840 },
-        { date: 'Jan 26', day: 'Sun', lunch: 860, dinner: 830 },
-        { date: 'Jan 27', day: 'Mon', lunch: 880, dinner: 860 },
-    ];
+    // Fetch 7-day attendance forecast
+    useEffect(() => {
+        async function fetchForecast() {
+            try {
+                const data = await get7DayAttendance();
+                setForecast(data);
+            } catch (error) {
+                console.error('Error fetching forecast:', error);
+            }
+        }
+        fetchForecast();
+    }, []);
+
+    // Fetch meal time settings
+    useEffect(() => {
+        async function fetchSettings() {
+            try {
+                const settings = await getMealTimeSettings();
+                setMealTimeSettings(settings);
+            } catch (error) {
+                console.error('Error fetching meal time settings:', error);
+            }
+        }
+        fetchSettings();
+    }, []);
 
     // Fetch leaves from Firestore
     useEffect(() => {
         async function fetchLeaves() {
-            setIsLoadingLeaves(true);
             try {
                 const leaves = await getAllLeaves();
                 const today = new Date();
@@ -97,7 +117,6 @@ export default function AdminOperations() {
             } catch (error) {
                 console.error('Error fetching leaves:', error);
             }
-            setIsLoadingLeaves(false);
         }
         fetchLeaves();
     }, []);
@@ -147,19 +166,27 @@ export default function AdminOperations() {
     };
 
     return (
-        <div className="p-6 bg-gray-50 min-h-screen">
+        <div className="p-4 sm:p-6 bg-gray-50 min-h-screen">
             {/* Header */}
-            <div className="flex items-start justify-between mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Operations & Control</h1>
-                    <p className="text-sm text-gray-500">Manage attendance, points, and generate reports</p>
+            <div className="flex flex-col gap-4 mb-6">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                    <div>
+                        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Operations & Control</h1>
+                        <p className="text-sm text-gray-500">Manage attendance, points, and generate reports</p>
+                    </div>
+                    {/* QR Code Display for Attendance - Hidden on mobile, shown in its own section below */}
+                    <div className="hidden sm:block">
+                        <AdminQRDisplay />
+                    </div>
                 </div>
-                {/* QR Code Display for Attendance */}
-                <AdminQRDisplay />
+                {/* QR Code Display - Centered on mobile */}
+                <div className="sm:hidden flex justify-center">
+                    <AdminQRDisplay className="w-full max-w-xs" />
+                </div>
             </div>
 
             {/* Tab Navigation */}
-            <div className="flex gap-1 mb-6 bg-white border border-gray-200 p-1 w-fit">
+            <div className="flex flex-wrap gap-1 mb-6 bg-white border border-gray-200 p-1 w-fit">
                 {[
                     { key: 'attendance', label: '📅 Attendance & Leaves', },
                     { key: 'points', label: '⭐ Points & Rewards', },
@@ -185,26 +212,33 @@ export default function AdminOperations() {
                     <LiveAttendance />
 
                     {/* Forecast Table */}
-                    <div className="bg-white border border-gray-200 p-5">
-                        <h3 className="font-semibold text-gray-900 mb-4">7-Day Attendance Forecast</h3>
-                        <div className="grid grid-cols-7 gap-2">
-                            {forecast.map((day, i) => (
-                                <div key={i} className={`p-3 text-center border ${i === 0 ? 'border-teal-500 bg-teal-50' : 'border-gray-200'
-                                    }`}>
-                                    <p className={`text-xs font-medium ${i === 0 ? 'text-teal-600' : 'text-gray-500'}`}>
-                                        {day.day}
-                                    </p>
-                                    <p className="text-sm font-semibold text-gray-900">{day.date}</p>
-                                    <div className="mt-2 space-y-1">
-                                        <p className="text-xs text-gray-500">🍛 {day.lunch}</p>
-                                        <p className="text-xs text-gray-500">🍽️ {day.dinner}</p>
-                                    </div>
-                                </div>
-                            ))}
+                    <div className="bg-white border border-gray-200 p-4 sm:p-5">
+                        <h3 className="font-semibold text-gray-900 mb-4">7-Day Attendance History</h3>
+                        <div className="overflow-x-auto -mx-4 sm:mx-0">
+                            <div className="grid grid-cols-7 gap-2 min-w-[600px]">
+                                {forecast.map((day) => {
+                                    const isToday = day.displayDate === 'Today';
+                                    return (
+                                        <div key={day.date} className={`p-3 text-center border ${isToday ? 'border-teal-500 bg-teal-50' : 'border-gray-200'
+                                            }`}>
+                                            <p className={`text-xs font-medium ${isToday ? 'text-teal-600' : 'text-gray-500'}`}>
+                                                {day.dayName}
+                                            </p>
+                                            <p className="text-sm font-semibold text-gray-900">{day.displayDate}</p>
+                                            <div className="mt-2 space-y-1">
+                                                <p className="text-xs text-gray-500">🍳 {day.breakfast}</p>
+                                                <p className="text-xs text-gray-500">🍛 {day.lunch}</p>
+                                                <p className="text-xs text-gray-500">🍽️ {day.dinner}</p>
+                                            </div>
+                                            <p className="mt-1 text-xs font-medium text-gray-700">Total: {day.total}</p>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                         {/* Active Leaves */}
                         <div className="bg-white border border-gray-200 p-5">
                             <div className="flex items-center justify-between mb-4">
@@ -276,7 +310,7 @@ export default function AdminOperations() {
 
             {/* Points & Rewards Tab */}
             {activeTab === 'points' && (
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                     {/* Point Rules */}
                     <div className="bg-white border border-gray-200 p-5">
                         <h3 className="font-semibold text-gray-900 mb-4">Point Rules Configuration</h3>
@@ -329,33 +363,125 @@ export default function AdminOperations() {
                     </div>
 
                     {/* Repeat No-Shows */}
-                    <div className="col-span-2 bg-white border border-gray-200 p-5">
+                    <div className="lg:col-span-2 bg-white border border-gray-200 p-4 sm:p-5">
                         <h3 className="font-semibold text-gray-900 mb-4">Repeat Offenders (3+ No-Shows This Month)</h3>
-                        <table className="w-full">
-                            <thead>
-                                <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                    <th className="pb-3">Student</th>
-                                    <th className="pb-3">Room</th>
-                                    <th className="pb-3">No-Shows</th>
-                                    <th className="pb-3">Points Lost</th>
-                                    <th className="pb-3">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {noShowStudents.map((student) => (
-                                    <tr key={student.id} className="border-t border-gray-100">
-                                        <td className="py-3 font-medium text-gray-900">{student.name}</td>
-                                        <td className="py-3 text-gray-500">{student.room}</td>
-                                        <td className="py-3 text-red-600 font-semibold">{student.noShowCount}</td>
-                                        <td className="py-3 text-gray-500">-{student.pointsDeducted}</td>
-                                        <td className="py-3">
-                                            <button className="text-xs bg-amber-100 text-amber-700 px-2 py-1 mr-2">Warn</button>
-                                            <button className="text-xs bg-white border border-gray-200 px-2 py-1">Adjust</button>
-                                        </td>
+                        <div className="overflow-x-auto -mx-4 sm:mx-0">
+                            <table className="w-full min-w-[500px]">
+                                <thead>
+                                    <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                        <th className="pb-3">Student</th>
+                                        <th className="pb-3">Room</th>
+                                        <th className="pb-3">No-Shows</th>
+                                        <th className="pb-3">Points Lost</th>
+                                        <th className="pb-3">Action</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {noShowStudents.map((student) => (
+                                        <tr key={student.id} className="border-t border-gray-100">
+                                            <td className="py-3 font-medium text-gray-900">{student.name}</td>
+                                            <td className="py-3 text-gray-500">{student.room}</td>
+                                            <td className="py-3 text-red-600 font-semibold">{student.noShowCount}</td>
+                                            <td className="py-3 text-gray-500">-{student.pointsDeducted}</td>
+                                            <td className="py-3">
+                                                <button className="text-xs bg-amber-100 text-amber-700 px-2 py-1 mr-2">Warn</button>
+                                                <button className="text-xs bg-white border border-gray-200 px-2 py-1">Adjust</button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Meal Time Windows */}
+                    <div className="lg:col-span-2 bg-white border border-gray-200 p-4 sm:p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h3 className="font-semibold text-gray-900">⏰ Meal Time Windows</h3>
+                                <p className="text-xs text-gray-500">Configure when students can toggle intent and scan QR</p>
+                            </div>
+                            <button
+                                onClick={async () => {
+                                    if (!user) return;
+                                    setIsSavingSettings(true);
+                                    const result = await updateMealTimeSettings(mealTimeSettings, user.uid);
+                                    setIsSavingSettings(false);
+                                    if (result.success) {
+                                        setSettingsSaved(true);
+                                        setTimeout(() => setSettingsSaved(false), 2000);
+                                    }
+                                }}
+                                disabled={isSavingSettings}
+                                className={`px-4 py-2 rounded text-sm font-medium transition-all ${
+                                    settingsSaved
+                                        ? 'bg-green-500 text-white'
+                                        : 'bg-[#0d2137] text-white hover:bg-[#152d4a]'
+                                } ${isSavingSettings ? 'opacity-50' : ''}`}
+                            >
+                                {settingsSaved ? '✓ Saved' : isSavingSettings ? 'Saving...' : 'Save Settings'}
+                            </button>
+                        </div>
+                        <div className="space-y-4">
+                            {(['breakfast', 'lunch', 'dinner'] as const).map((meal) => (
+                                <div key={meal} className="p-4 border border-gray-100 rounded-lg">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <span className="text-xl">{meal === 'breakfast' ? '🍳' : meal === 'lunch' ? '🍛' : '🍽️'}</span>
+                                        <h4 className="font-medium text-gray-900 capitalize">{meal}</h4>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-2">Intent Toggle Window</p>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="time"
+                                                    value={mealTimeSettings[meal].toggleStart}
+                                                    onChange={(e) => setMealTimeSettings(prev => ({
+                                                        ...prev,
+                                                        [meal]: { ...prev[meal], toggleStart: e.target.value }
+                                                    }))}
+                                                    className="px-2 py-1 border border-gray-200 rounded text-sm"
+                                                />
+                                                <span className="text-gray-400">→</span>
+                                                <input
+                                                    type="time"
+                                                    value={mealTimeSettings[meal].toggleEnd}
+                                                    onChange={(e) => setMealTimeSettings(prev => ({
+                                                        ...prev,
+                                                        [meal]: { ...prev[meal], toggleEnd: e.target.value }
+                                                    }))}
+                                                    className="px-2 py-1 border border-gray-200 rounded text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-2">QR Scan Window</p>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="time"
+                                                    value={mealTimeSettings[meal].scanStart}
+                                                    onChange={(e) => setMealTimeSettings(prev => ({
+                                                        ...prev,
+                                                        [meal]: { ...prev[meal], scanStart: e.target.value }
+                                                    }))}
+                                                    className="px-2 py-1 border border-gray-200 rounded text-sm"
+                                                />
+                                                <span className="text-gray-400">→</span>
+                                                <input
+                                                    type="time"
+                                                    value={mealTimeSettings[meal].scanEnd}
+                                                    onChange={(e) => setMealTimeSettings(prev => ({
+                                                        ...prev,
+                                                        [meal]: { ...prev[meal], scanEnd: e.target.value }
+                                                    }))}
+                                                    className="px-2 py-1 border border-gray-200 rounded text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             )}
@@ -366,7 +492,7 @@ export default function AdminOperations() {
                     {/* Export Options */}
                     <div className="bg-white border border-gray-200 p-5">
                         <h3 className="font-semibold text-gray-900 mb-4">Export Data</h3>
-                        <div className="grid grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             {[
                                 { label: 'Attendance Report', icon: '📅', desc: 'Daily/weekly attendance data' },
                                 { label: 'Wastage Trends', icon: '📊', desc: 'Category-wise wastage analysis' },
@@ -387,19 +513,19 @@ export default function AdminOperations() {
                     </div>
 
                     {/* Generate Weekly Report */}
-                    <div className="bg-white border border-gray-200 p-5">
-                        <div className="flex items-center justify-between">
+                    <div className="bg-white border border-gray-200 p-4 sm:p-5">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
                                 <h3 className="font-semibold text-gray-900">Generate Weekly Report</h3>
                                 <p className="text-sm text-gray-500">Comprehensive summary of all metrics for the week</p>
                             </div>
-                            <div className="flex items-center gap-3">
-                                <select className="text-sm border border-gray-200 p-2">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+                                <select className="text-sm border border-gray-200 p-2 rounded">
                                     <option>This Week (Jan 10-16)</option>
                                     <option>Last Week (Jan 3-9)</option>
                                     <option>2 Weeks Ago (Dec 27-Jan 2)</option>
                                 </select>
-                                <button className="px-4 py-2 bg-[#0d2137] text-white text-sm font-medium hover:bg-[#152d4a] transition-colors">
+                                <button className="px-4 py-2 bg-[#0d2137] text-white text-sm font-medium hover:bg-[#152d4a] transition-colors rounded whitespace-nowrap">
                                     📄 Generate PDF
                                 </button>
                             </div>
@@ -407,7 +533,7 @@ export default function AdminOperations() {
                     </div>
 
                     {/* Recent Exports */}
-                    <div className="bg-white border border-gray-200 p-5">
+                    <div className="bg-white border border-gray-200 p-4 sm:p-5">
                         <h3 className="font-semibold text-gray-900 mb-4">Recent Exports</h3>
                         <div className="space-y-2">
                             {[
@@ -415,15 +541,15 @@ export default function AdminOperations() {
                                 { name: 'Attendance_Jan2026.csv', date: 'Jan 15, 2026', size: '156 KB' },
                                 { name: 'Feedback_Summary_Week2.xlsx', date: 'Jan 14, 2026', size: '89 KB' },
                             ].map((file, i) => (
-                                <div key={i} className="flex items-center justify-between p-3 border border-gray-100 hover:bg-gray-50">
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-xl">📁</span>
-                                        <div>
-                                            <p className="font-medium text-gray-900">{file.name}</p>
+                                <div key={i} className="flex items-center justify-between gap-2 p-3 border border-gray-100 hover:bg-gray-50">
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                        <span className="text-xl flex-shrink-0">📁</span>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="font-medium text-gray-900 truncate">{file.name}</p>
                                             <p className="text-xs text-gray-500">{file.date} • {file.size}</p>
                                         </div>
                                     </div>
-                                    <button className="text-sm text-teal-600 hover:text-teal-700">Download</button>
+                                    <button className="text-sm text-teal-600 hover:text-teal-700 flex-shrink-0">Download</button>
                                 </div>
                             ))}
                         </div>

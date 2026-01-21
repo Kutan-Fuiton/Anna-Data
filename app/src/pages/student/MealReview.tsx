@@ -4,7 +4,7 @@ import { analyzeImage, type AnalysisResponse, type WasteAnalysis } from '../../a
 import * as firestore from '../../services/firestore';
 import { useAuth } from '../../context/AuthContext';
 
-type MealType = 'lunch' | 'dinner';
+type MealType = 'breakfast' | 'lunch' | 'dinner';
 
 interface FeedbackRatings {
     taste: number;
@@ -52,7 +52,9 @@ export default function MealReview() {
     // Auto-select meal based on current time
     const getDefaultMeal = (): MealType => {
         const hour = new Date().getHours();
-        return hour < 15 ? 'lunch' : 'dinner';
+        if (hour < 10) return 'breakfast';
+        if (hour < 15) return 'lunch';
+        return 'dinner';
     };
 
     const [selectedMeal, setSelectedMeal] = useState<MealType>(getDefaultMeal());
@@ -360,14 +362,15 @@ export default function MealReview() {
 
     return (
         <div className="space-y-5">
-            {/* Header Row */}
-            <div className="flex items-start justify-between">
+            {/* Header Section - Stacked Layout */}
+            <div className="space-y-4">
+                {/* Title and Date */}
                 <div>
                     <p className={`text-sm font-medium uppercase tracking-wide mb-1 ${theme === 'dark' ? 'text-green-500' : 'text-green-600'
                         }`}>
                         MEAL FEEDBACK
                     </p>
-                    <h1 className={`text-3xl font-bold mb-1 ${theme === 'dark' ? 'text-white' : 'text-gray-900'
+                    <h1 className={`text-2xl sm:text-3xl font-bold mb-1 ${theme === 'dark' ? 'text-white' : 'text-gray-900'
                         }`}>
                         How was your meal?
                     </h1>
@@ -376,21 +379,21 @@ export default function MealReview() {
                     </p>
                 </div>
 
-                {/* Meal Selector */}
-                <div className="flex gap-2">
-                    {(['lunch', 'dinner'] as MealType[]).map((meal) => (
+                {/* Meal Selector - Below text */}
+                <div className="flex flex-wrap gap-2">
+                    {(['breakfast', 'lunch', 'dinner'] as MealType[]).map((meal) => (
                         <button
                             key={meal}
                             onClick={() => setSelectedMeal(meal)}
-                            className={`py-3 px-5 rounded-xl font-medium transition-all duration-200 flex items-center gap-2 ${selectedMeal === meal
+                            className={`py-2.5 sm:py-3 px-4 sm:px-5 rounded-xl font-medium transition-all duration-200 flex items-center gap-2 ${selectedMeal === meal
                                 ? 'bg-green-600 text-white shadow-lg shadow-green-600/20'
                                 : theme === 'dark'
                                     ? 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white border border-green-900/30'
                                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
                                 }`}
                         >
-                            <span className="text-xl">{meal === 'lunch' ? '🍛' : '🍽️'}</span>
-                            <span className="capitalize">{meal}</span>
+                            <span className="text-lg sm:text-xl">{meal === 'breakfast' ? '🌅' : meal === 'lunch' ? '🍛' : '🍽️'}</span>
+                            <span className="capitalize text-sm sm:text-base">{meal}</span>
                         </button>
                     ))}
                 </div>
@@ -410,12 +413,12 @@ export default function MealReview() {
                             Rate Your Experience
                         </h3>
 
-                        {/* 2x2 Grid for Ratings */}
-                        <div className="grid grid-cols-2 gap-4">
+                        {/* 2x2 Grid for Ratings - Responsive */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {feedbackCategories.map((category) => (
                                 <div key={category.key} className={`p-4 rounded-xl ${theme === 'dark' ? 'bg-white/5' : 'bg-gray-50'
                                     }`}>
-                                    <div className="flex items-center justify-between mb-3">
+                                    <div className="flex flex-col gap-2 mb-3">
                                         <div className="flex items-center gap-2">
                                             <span className="text-xl">{category.icon}</span>
                                             <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'
@@ -423,7 +426,7 @@ export default function MealReview() {
                                                 {category.label}
                                             </span>
                                         </div>
-                                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${ratingColors[ratings[category.key] - 1]
+                                        <span className={`text-xs font-medium px-2 py-1 rounded-full w-fit ${ratingColors[ratings[category.key] - 1]
                                             } text-white`}>
                                             {ratingLabels[ratings[category.key] - 1]}
                                         </span>

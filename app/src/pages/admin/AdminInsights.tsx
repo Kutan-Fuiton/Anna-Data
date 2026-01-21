@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { 
-    XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-    LineChart, Line, PieChart, Pie, Cell, BarChart, Bar, Legend 
+import {
+    XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+    LineChart, Line, PieChart, Pie, Cell, BarChart, Bar, Legend
 } from 'recharts';
-import { 
-    getAnalytics, getLastUpdatedTimestamp, 
-    type TimeRange, type AnalyticsSummary, type WasteLevel 
+import {
+    getAnalytics, getLastUpdatedTimestamp,
+    type TimeRange, type AnalyticsSummary, type WasteLevel
 } from '../../services/analyticsService';
 
 interface AIInsight {
@@ -132,19 +132,19 @@ export default function AdminInsights() {
     };
 
     return (
-        <div className="p-6 bg-gray-50 min-h-screen">
+        <div className="p-4 sm:p-6 bg-gray-50 min-h-screen">
             {/* Header */}
-            <div className="flex items-start justify-between mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Insights & AI Analysis</h1>
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Insights & AI Analysis</h1>
                     <p className="text-sm text-gray-500">AI-powered feedback analysis and wastage trends</p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className="text-right">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+                    <div className="text-left sm:text-right">
                         <p className="text-xs text-gray-400">AI Analysis last generated</p>
                         <p className="text-sm text-gray-600 font-medium">{lastGenerated}</p>
                     </div>
-                    <button 
+                    <button
                         onClick={() => {
                             setAnalytics(getAnalytics(timeRange));
                             setLastGenerated(getLastUpdatedTimestamp());
@@ -157,7 +157,7 @@ export default function AdminInsights() {
             </div>
 
             {/* Section Tabs */}
-            <div className="flex gap-4 mb-6">
+            <div className="flex flex-wrap gap-2 sm:gap-4 mb-6">
                 <button
                     onClick={() => setActiveSection('ai')}
                     className={`px-5 py-2.5 text-sm font-medium transition-colors ${activeSection === 'ai'
@@ -300,7 +300,7 @@ export default function AdminInsights() {
 
                     {/* Summary Statistics Cards */}
                     {isLoading ? (
-                        <div className="grid grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             {[1, 2, 3, 4].map(i => (
                                 <div key={i} className="bg-white border border-gray-200 p-5 animate-pulse">
                                     <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
@@ -309,7 +309,7 @@ export default function AdminInsights() {
                             ))}
                         </div>
                     ) : analytics && (
-                        <div className="grid grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             <div className="bg-white border border-gray-200 p-5">
                                 <p className="text-sm text-gray-500 mb-1">Total Analyses</p>
                                 <p className="text-2xl font-bold text-gray-900">{analytics.totalAnalyses.toLocaleString()}</p>
@@ -339,9 +339,9 @@ export default function AdminInsights() {
 
                     {/* Charts Grid */}
                     {!isLoading && analytics && (
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                             {/* Line Chart - Trend over time */}
-                            <div className="col-span-2 bg-white border border-gray-200 p-5">
+                            <div className="lg:col-span-2 bg-white border border-gray-200 p-4 sm:p-5">
                                 <h3 className="font-semibold text-gray-900 mb-4">Wastage Trend by Category (kg)</h3>
                                 <ResponsiveContainer width="100%" height={280}>
                                     <LineChart data={analytics.trendData}>
@@ -393,7 +393,7 @@ export default function AdminInsights() {
 
                     {/* Bar Chart - Top Wasted Items */}
                     {!isLoading && analytics && (
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="bg-white border border-gray-200 p-5">
                                 <h3 className="font-semibold text-gray-900 mb-4">Top Wasted Food Items</h3>
                                 <ResponsiveContainer width="100%" height={250}>

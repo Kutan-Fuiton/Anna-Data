@@ -22,6 +22,7 @@ venv/
 .env
 .env.local
 .env.*.local
+.env.template
 
 # ----- Datasets (large files) -----
 Food_Dataset/
