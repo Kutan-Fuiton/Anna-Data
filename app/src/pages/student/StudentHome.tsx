@@ -1,7 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeProvider';
 import { useAuth } from '../../context/AuthContext';
-import { submitMealIntent, getMealIntents } from '../../services/firestore';
+import { 
+    submitMealIntent, 
+    getMealIntents, 
+    getMealTimeSettings, 
+    getUserTodayScans,
+    isMealToggleOpen,
+    DEFAULT_MEAL_TIME_SETTINGS
+} from '../../services/firestore';
+import type { MealTimeSettings } from '../../services/firestore';
 import MealCard from '../../components/student/MealCard';
 import LeaveCalendar from '../../components/student/LeaveCalendar';
 import UpcomingLeaves from '../../components/student/UpcomingLeaves';
@@ -16,10 +24,11 @@ export default function StudentHome() {
         lunch: false,
         dinner: false
     });
-    const [isLoading, setIsLoading] = useState(true);
     const [leaveRefreshTrigger, setLeaveRefreshTrigger] = useState(0);
     const [showScanner, setShowScanner] = useState(false);
     const [scanningMealType, setScanningMealType] = useState<'breakfast' | 'lunch' | 'dinner'>('breakfast');
+    const [mealTimeSettings, setMealTimeSettings] = useState<MealTimeSettings>(DEFAULT_MEAL_TIME_SETTINGS);
+    const [scannedMeals, setScannedMeals] = useState({ breakfast: false, lunch: false, dinner: false });
 
     // Handle opening scanner for a specific meal
     const handleOpenScanner = (mealType: 'breakfast' | 'lunch' | 'dinner') => {
@@ -37,11 +46,37 @@ export default function StudentHome() {
     };
     const formattedDate = today.toLocaleDateString('en-IN', options);
 
+    // Fetch meal time settings
+    useEffect(() => {
+        async function fetchSettings() {
+            try {
+                const settings = await getMealTimeSettings();
+                setMealTimeSettings(settings);
+            } catch (error) {
+                console.error('Error fetching meal time settings:', error);
+            }
+        }
+        fetchSettings();
+    }, []);
+
+    // Fetch user's today scans
+    useEffect(() => {
+        async function fetchScans() {
+            if (!user) return;
+            try {
+                const scans = await getUserTodayScans(user.uid);
+                setScannedMeals(scans);
+            } catch (error) {
+                console.error('Error fetching user scans:', error);
+            }
+        }
+        fetchScans();
+    }, [user, showScanner]); // Refetch when scanner closes
+
     // Fetch existing intent on mount
     useEffect(() => {
         async function fetchIntents() {
             if (!user) return;
-            setIsLoading(true);
             try {
                 const start = new Date(today);
                 start.setHours(0, 0, 0, 0);
@@ -54,8 +89,6 @@ export default function StudentHome() {
                 }
             } catch (error) {
                 console.error('Error fetching meal intents:', error);
-            } finally {
-                setIsLoading(false);
             }
         }
         fetchIntents();
@@ -100,17 +133,25 @@ export default function StudentHome() {
 
     const userName = getFormattedName();
 
-    // Calculate cutoff times
+    // Calculate cutoff times using settings
     const breakfastCutoff = new Date(today);
-    breakfastCutoff.setHours(7, 30, 0, 0);
+    const [bEndH, bEndM] = mealTimeSettings.breakfast.toggleEnd.split(':').map(Number);
+    breakfastCutoff.setHours(bEndH, bEndM, 0, 0);
 
     const lunchCutoff = new Date(today);
-    lunchCutoff.setHours(10, 30, 0, 0);
+    const [lEndH, lEndM] = mealTimeSettings.lunch.toggleEnd.split(':').map(Number);
+    lunchCutoff.setHours(lEndH, lEndM, 0, 0);
 
     const dinnerCutoff = new Date(today);
-    dinnerCutoff.setHours(17, 30, 0, 0);
+    const [dEndH, dEndM] = mealTimeSettings.dinner.toggleEnd.split(':').map(Number);
+    dinnerCutoff.setHours(dEndH, dEndM, 0, 0);
 
     const isMessOpen = today.getHours() >= 7 && today.getHours() < 22;
+
+    // Check if toggle windows are open
+    const breakfastToggleOpen = isMealToggleOpen('breakfast', mealTimeSettings);
+    const lunchToggleOpen = isMealToggleOpen('lunch', mealTimeSettings);
+    const dinnerToggleOpen = isMealToggleOpen('dinner', mealTimeSettings);
 
     return (
         <div className="space-y-6">
@@ -145,6 +186,9 @@ export default function StudentHome() {
                     isEating={mealIntents.breakfast}
                     onToggle={handleToggleIntent}
                     onScanClick={() => handleOpenScanner('breakfast')}
+                    isToggleOpen={breakfastToggleOpen}
+                    hasScanned={scannedMeals.breakfast}
+                    toggleOpenTime={mealTimeSettings.breakfast.toggleStart}
                 />
                 <MealCard
                     type="lunch"
@@ -153,6 +197,9 @@ export default function StudentHome() {
                     isEating={mealIntents.lunch}
                     onToggle={handleToggleIntent}
                     onScanClick={() => handleOpenScanner('lunch')}
+                    isToggleOpen={lunchToggleOpen}
+                    hasScanned={scannedMeals.lunch}
+                    toggleOpenTime={mealTimeSettings.lunch.toggleStart}
                 />
                 <MealCard
                     type="dinner"
@@ -161,6 +208,9 @@ export default function StudentHome() {
                     isEating={mealIntents.dinner}
                     onToggle={handleToggleIntent}
                     onScanClick={() => handleOpenScanner('dinner')}
+                    isToggleOpen={dinnerToggleOpen}
+                    hasScanned={scannedMeals.dinner}
+                    toggleOpenTime={mealTimeSettings.dinner.toggleStart}
                 />
             </div>
 

@@ -102,6 +102,43 @@ export interface Reward {
     available: boolean;
 }
 
+export interface MealTimeWindow {
+    toggleStart: string;  // HH:mm format
+    toggleEnd: string;
+    scanStart: string;
+    scanEnd: string;
+}
+
+export interface MealTimeSettings {
+    breakfast: MealTimeWindow;
+    lunch: MealTimeWindow;
+    dinner: MealTimeWindow;
+    updatedAt?: Date;
+    updatedBy?: string;
+}
+
+// Default meal time settings
+export const DEFAULT_MEAL_TIME_SETTINGS: MealTimeSettings = {
+    breakfast: {
+        toggleStart: '18:00',  // 6 PM previous day
+        toggleEnd: '08:00',    // 8 AM
+        scanStart: '07:00',
+        scanEnd: '10:00'
+    },
+    lunch: {
+        toggleStart: '08:00',
+        toggleEnd: '11:00',
+        scanStart: '12:00',
+        scanEnd: '14:30'
+    },
+    dinner: {
+        toggleStart: '11:00',
+        toggleEnd: '18:00',
+        scanStart: '19:00',
+        scanEnd: '21:30'
+    }
+};
+
 // ============== Feedback Operations ==============
 
 /**
@@ -783,21 +820,19 @@ export async function markMealAttendance(
 ): Promise<{ success: boolean; error?: string; userName?: string; userEmail?: string }> {
     try {
         const dateStr = date.toISOString().split('T')[0];
-        // DEMO MODE: Use timestamp to allow multiple scans
-        const docId = `${userId}_${mealType}_${dateStr}_${Date.now()}`;
+        const docId = `${userId}_${mealType}_${dateStr}`;
 
-        // DEMO MODE: Skip duplicate check
-        // const existing = await checkMealAttendance(userId, mealType, date);
-        // if (existing) {
-        //     return { success: false, error: 'Already checked in for this meal' };
-        // }
+        // Check if already scanned for this meal today
+        const existing = await checkMealAttendance(userId, mealType, date);
+        if (existing) {
+            return { success: false, error: 'Already checked in for this meal' };
+        }
 
-        // DEMO MODE: Skip intent check
+        // Skip intent check for now - can be enabled later
         // const hadIntent = await checkMealIntent(userId, mealType, date);
         // if (!hadIntent) {
         //     return { success: false, error: 'Student did not mark intent to eat this meal' };
         // }
-
 
 
         // Fetch student details if not provided
@@ -962,6 +997,91 @@ export async function getTodayAttendanceStats(): Promise<{
     } catch (error) {
         console.error('Error fetching attendance stats:', error);
         return { breakfast: 0, lunch: 0, dinner: 0, total: 0 };
+    }
+}
+
+export interface DayAttendanceStats {
+    date: string;       // YYYY-MM-DD
+    dayName: string;    // Mon, Tue, etc.
+    displayDate: string; // "Jan 17", "Today"
+    breakfast: number;
+    lunch: number;
+    dinner: number;
+    total: number;
+}
+
+/**
+ * Get attendance stats for the past 7 days (including today)
+ * Data resets daily at midnight based on the `date` field
+ */
+export async function get7DayAttendance(): Promise<DayAttendanceStats[]> {
+    try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Start from 6 days ago to include today as day 7
+        const startDate = new Date(today);
+        startDate.setDate(startDate.getDate() - 6);
+
+        const endDate = new Date(today);
+        endDate.setDate(endDate.getDate() + 1); // End of today
+
+        const q = query(
+            collection(db, 'mealAttendance'),
+            where('date', '>=', Timestamp.fromDate(startDate)),
+            where('date', '<', Timestamp.fromDate(endDate)),
+            orderBy('date', 'asc')
+        );
+
+        const snapshot = await getDocs(q);
+
+        // Group attendance by date
+        const attendanceByDate = new Map<string, { breakfast: number; lunch: number; dinner: number }>();
+
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            const date = data.date instanceof Timestamp ? data.date.toDate() : new Date(data.date);
+            const dateStr = date.toISOString().split('T')[0];
+
+            if (!attendanceByDate.has(dateStr)) {
+                attendanceByDate.set(dateStr, { breakfast: 0, lunch: 0, dinner: 0 });
+            }
+
+            const stats = attendanceByDate.get(dateStr)!;
+            const mealType = data.mealType as 'breakfast' | 'lunch' | 'dinner';
+            if (mealType in stats) {
+                stats[mealType]++;
+            }
+        });
+
+        // Build result array for all 7 days
+        const result: DayAttendanceStats[] = [];
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const todayStr = today.toISOString().split('T')[0];
+
+        for (let i = 0; i < 7; i++) {
+            const date = new Date(startDate);
+            date.setDate(startDate.getDate() + i);
+            const dateStr = date.toISOString().split('T')[0];
+            const stats = attendanceByDate.get(dateStr) || { breakfast: 0, lunch: 0, dinner: 0 };
+
+            result.push({
+                date: dateStr,
+                dayName: dayNames[date.getDay()],
+                displayDate: dateStr === todayStr
+                    ? 'Today'
+                    : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                breakfast: stats.breakfast,
+                lunch: stats.lunch,
+                dinner: stats.dinner,
+                total: stats.breakfast + stats.lunch + stats.dinner,
+            });
+        }
+
+        return result;
+    } catch (error) {
+        console.error('Error fetching 7-day attendance:', error);
+        return [];
     }
 }
 
@@ -1387,3 +1507,138 @@ export async function rejectMealFeedback(feedbackId: string, userId: string): Pr
         console.error('Error rejecting feedback:', error);
     }
 }
+
+// ============== Meal Time Settings Operations ==============
+
+/**
+ * Get meal time settings from Firestore (or return defaults)
+ */
+export async function getMealTimeSettings(): Promise<MealTimeSettings> {
+    try {
+        const docRef = doc(db, 'settings', 'mealTimeWindows');
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            return {
+                breakfast: data.breakfast || DEFAULT_MEAL_TIME_SETTINGS.breakfast,
+                lunch: data.lunch || DEFAULT_MEAL_TIME_SETTINGS.lunch,
+                dinner: data.dinner || DEFAULT_MEAL_TIME_SETTINGS.dinner,
+                updatedAt: data.updatedAt?.toDate(),
+                updatedBy: data.updatedBy,
+            };
+        }
+
+        return DEFAULT_MEAL_TIME_SETTINGS;
+    } catch (error) {
+        console.error('Error fetching meal time settings:', error);
+        return DEFAULT_MEAL_TIME_SETTINGS;
+    }
+}
+
+/**
+ * Update meal time settings (admin only)
+ */
+export async function updateMealTimeSettings(
+    settings: MealTimeSettings,
+    adminId: string
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const docRef = doc(db, 'settings', 'mealTimeWindows');
+        await setDoc(docRef, {
+            breakfast: settings.breakfast,
+            lunch: settings.lunch,
+            dinner: settings.dinner,
+            updatedAt: serverTimestamp(),
+            updatedBy: adminId,
+        });
+        return { success: true };
+    } catch (error) {
+        console.error('Error updating meal time settings:', error);
+        return { success: false, error: 'Failed to update settings' };
+    }
+}
+
+/**
+ * Get user's meals that have been scanned today
+ */
+export async function getUserTodayScans(userId: string): Promise<{
+    breakfast: boolean;
+    lunch: boolean;
+    dinner: boolean;
+}> {
+    try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        const q = query(
+            collection(db, 'mealAttendance'),
+            where('userId', '==', userId),
+            where('date', '>=', Timestamp.fromDate(today)),
+            where('date', '<', Timestamp.fromDate(tomorrow))
+        );
+
+        const snapshot = await getDocs(q);
+        const scans = { breakfast: false, lunch: false, dinner: false };
+
+        snapshot.docs.forEach(doc => {
+            const mealType = doc.data().mealType as 'breakfast' | 'lunch' | 'dinner';
+            if (mealType in scans) {
+                scans[mealType] = true;
+            }
+        });
+
+        return scans;
+    } catch (error) {
+        console.error('Error fetching user scans:', error);
+        return { breakfast: false, lunch: false, dinner: false };
+    }
+}
+
+/**
+ * Check if a time window is currently open
+ * Handles overnight windows (e.g., 18:00 to 08:00)
+ */
+export function isTimeWindowOpen(startTime: string, endTime: string): boolean {
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const [startH, startM] = startTime.split(':').map(Number);
+    const [endH, endM] = endTime.split(':').map(Number);
+
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+
+    // Handle overnight window (e.g., 18:00 to 08:00)
+    if (startMinutes > endMinutes) {
+        return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+    }
+
+    // Normal window (e.g., 08:00 to 11:00)
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+}
+
+/**
+ * Check if meal toggle is currently allowed
+ */
+export function isMealToggleOpen(
+    mealType: 'breakfast' | 'lunch' | 'dinner',
+    settings: MealTimeSettings
+): boolean {
+    const window = settings[mealType];
+    return isTimeWindowOpen(window.toggleStart, window.toggleEnd);
+}
+
+/**
+ * Check if meal scan is currently allowed
+ */
+export function isMealScanOpen(
+    mealType: 'breakfast' | 'lunch' | 'dinner',
+    settings: MealTimeSettings
+): boolean {
+    const window = settings[mealType];
+    return isTimeWindowOpen(window.scanStart, window.scanEnd);
+}
+

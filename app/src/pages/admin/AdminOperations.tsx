@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import AdminQRDisplay from '../../components/admin/AdminQRDisplay';
 import LiveAttendance from '../../components/admin/LiveAttendance';
+import { useAuth } from '../../context/AuthContext';
 import * as firestore from '../../services/firestore';
+import type { DayAttendanceStats, MealTimeSettings } from '../../services/firestore';
 
-const { getAllLeaves } = firestore;
+const { getAllLeaves, get7DayAttendance, getMealTimeSettings, updateMealTimeSettings, DEFAULT_MEAL_TIME_SETTINGS } = firestore;
 
 type ActiveTab = 'attendance' | 'points' | 'reports';
 
@@ -35,25 +37,43 @@ interface Reward {
 }
 
 export default function AdminOperations() {
+    const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<ActiveTab>('attendance');
     const [activeLeaves, setActiveLeaves] = useState<AdminLeaveDisplay[]>([]);
-    const [isLoadingLeaves, setIsLoadingLeaves] = useState(true);
+    const [forecast, setForecast] = useState<DayAttendanceStats[]>([]);
+    const [mealTimeSettings, setMealTimeSettings] = useState<MealTimeSettings>(DEFAULT_MEAL_TIME_SETTINGS);
+    const [isSavingSettings, setIsSavingSettings] = useState(false);
+    const [settingsSaved, setSettingsSaved] = useState(false);
 
-    // Attendance Forecast (next 7 days)
-    const forecast = [
-        { date: 'Today', day: 'Tue', lunch: 820, dinner: 780 },
-        { date: 'Jan 22', day: 'Wed', lunch: 650, dinner: 620 },
-        { date: 'Jan 23', day: 'Thu', lunch: 580, dinner: 550 },
-        { date: 'Jan 24', day: 'Fri', lunch: 890, dinner: 850 },
-        { date: 'Jan 25', day: 'Sat', lunch: 870, dinner: 840 },
-        { date: 'Jan 26', day: 'Sun', lunch: 860, dinner: 830 },
-        { date: 'Jan 27', day: 'Mon', lunch: 880, dinner: 860 },
-    ];
+    // Fetch 7-day attendance forecast
+    useEffect(() => {
+        async function fetchForecast() {
+            try {
+                const data = await get7DayAttendance();
+                setForecast(data);
+            } catch (error) {
+                console.error('Error fetching forecast:', error);
+            }
+        }
+        fetchForecast();
+    }, []);
+
+    // Fetch meal time settings
+    useEffect(() => {
+        async function fetchSettings() {
+            try {
+                const settings = await getMealTimeSettings();
+                setMealTimeSettings(settings);
+            } catch (error) {
+                console.error('Error fetching meal time settings:', error);
+            }
+        }
+        fetchSettings();
+    }, []);
 
     // Fetch leaves from Firestore
     useEffect(() => {
         async function fetchLeaves() {
-            setIsLoadingLeaves(true);
             try {
                 const leaves = await getAllLeaves();
                 const today = new Date();
@@ -97,7 +117,6 @@ export default function AdminOperations() {
             } catch (error) {
                 console.error('Error fetching leaves:', error);
             }
-            setIsLoadingLeaves(false);
         }
         fetchLeaves();
     }, []);
@@ -194,22 +213,27 @@ export default function AdminOperations() {
 
                     {/* Forecast Table */}
                     <div className="bg-white border border-gray-200 p-4 sm:p-5">
-                        <h3 className="font-semibold text-gray-900 mb-4">7-Day Attendance Forecast</h3>
+                        <h3 className="font-semibold text-gray-900 mb-4">7-Day Attendance History</h3>
                         <div className="overflow-x-auto -mx-4 sm:mx-0">
                             <div className="grid grid-cols-7 gap-2 min-w-[600px]">
-                                {forecast.map((day, i) => (
-                                    <div key={i} className={`p-3 text-center border ${i === 0 ? 'border-teal-500 bg-teal-50' : 'border-gray-200'
-                                        }`}>
-                                        <p className={`text-xs font-medium ${i === 0 ? 'text-teal-600' : 'text-gray-500'}`}>
-                                            {day.day}
-                                        </p>
-                                        <p className="text-sm font-semibold text-gray-900">{day.date}</p>
-                                        <div className="mt-2 space-y-1">
-                                            <p className="text-xs text-gray-500">🍛 {day.lunch}</p>
-                                            <p className="text-xs text-gray-500">🍽️ {day.dinner}</p>
+                                {forecast.map((day) => {
+                                    const isToday = day.displayDate === 'Today';
+                                    return (
+                                        <div key={day.date} className={`p-3 text-center border ${isToday ? 'border-teal-500 bg-teal-50' : 'border-gray-200'
+                                            }`}>
+                                            <p className={`text-xs font-medium ${isToday ? 'text-teal-600' : 'text-gray-500'}`}>
+                                                {day.dayName}
+                                            </p>
+                                            <p className="text-sm font-semibold text-gray-900">{day.displayDate}</p>
+                                            <div className="mt-2 space-y-1">
+                                                <p className="text-xs text-gray-500">🍳 {day.breakfast}</p>
+                                                <p className="text-xs text-gray-500">🍛 {day.lunch}</p>
+                                                <p className="text-xs text-gray-500">🍽️ {day.dinner}</p>
+                                            </div>
+                                            <p className="mt-1 text-xs font-medium text-gray-700">Total: {day.total}</p>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
@@ -367,6 +391,96 @@ export default function AdminOperations() {
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+
+                    {/* Meal Time Windows */}
+                    <div className="lg:col-span-2 bg-white border border-gray-200 p-4 sm:p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h3 className="font-semibold text-gray-900">⏰ Meal Time Windows</h3>
+                                <p className="text-xs text-gray-500">Configure when students can toggle intent and scan QR</p>
+                            </div>
+                            <button
+                                onClick={async () => {
+                                    if (!user) return;
+                                    setIsSavingSettings(true);
+                                    const result = await updateMealTimeSettings(mealTimeSettings, user.uid);
+                                    setIsSavingSettings(false);
+                                    if (result.success) {
+                                        setSettingsSaved(true);
+                                        setTimeout(() => setSettingsSaved(false), 2000);
+                                    }
+                                }}
+                                disabled={isSavingSettings}
+                                className={`px-4 py-2 rounded text-sm font-medium transition-all ${
+                                    settingsSaved
+                                        ? 'bg-green-500 text-white'
+                                        : 'bg-[#0d2137] text-white hover:bg-[#152d4a]'
+                                } ${isSavingSettings ? 'opacity-50' : ''}`}
+                            >
+                                {settingsSaved ? '✓ Saved' : isSavingSettings ? 'Saving...' : 'Save Settings'}
+                            </button>
+                        </div>
+                        <div className="space-y-4">
+                            {(['breakfast', 'lunch', 'dinner'] as const).map((meal) => (
+                                <div key={meal} className="p-4 border border-gray-100 rounded-lg">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <span className="text-xl">{meal === 'breakfast' ? '🍳' : meal === 'lunch' ? '🍛' : '🍽️'}</span>
+                                        <h4 className="font-medium text-gray-900 capitalize">{meal}</h4>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-2">Intent Toggle Window</p>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="time"
+                                                    value={mealTimeSettings[meal].toggleStart}
+                                                    onChange={(e) => setMealTimeSettings(prev => ({
+                                                        ...prev,
+                                                        [meal]: { ...prev[meal], toggleStart: e.target.value }
+                                                    }))}
+                                                    className="px-2 py-1 border border-gray-200 rounded text-sm"
+                                                />
+                                                <span className="text-gray-400">→</span>
+                                                <input
+                                                    type="time"
+                                                    value={mealTimeSettings[meal].toggleEnd}
+                                                    onChange={(e) => setMealTimeSettings(prev => ({
+                                                        ...prev,
+                                                        [meal]: { ...prev[meal], toggleEnd: e.target.value }
+                                                    }))}
+                                                    className="px-2 py-1 border border-gray-200 rounded text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-2">QR Scan Window</p>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="time"
+                                                    value={mealTimeSettings[meal].scanStart}
+                                                    onChange={(e) => setMealTimeSettings(prev => ({
+                                                        ...prev,
+                                                        [meal]: { ...prev[meal], scanStart: e.target.value }
+                                                    }))}
+                                                    className="px-2 py-1 border border-gray-200 rounded text-sm"
+                                                />
+                                                <span className="text-gray-400">→</span>
+                                                <input
+                                                    type="time"
+                                                    value={mealTimeSettings[meal].scanEnd}
+                                                    onChange={(e) => setMealTimeSettings(prev => ({
+                                                        ...prev,
+                                                        [meal]: { ...prev[meal], scanEnd: e.target.value }
+                                                    }))}
+                                                    className="px-2 py-1 border border-gray-200 rounded text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>

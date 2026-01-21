@@ -1,9 +1,9 @@
 /**
  * StudentQRScanner Component
- * Uses jsQR for reliable QR code detection from images
+ * Uses jsQR for reliable QR code detection from camera stream and images
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import jsQR from 'jsqr';
 import { useTheme } from '../../context/ThemeProvider';
 import { useAuth } from '../../context/AuthContext';
@@ -19,20 +19,115 @@ interface StudentQRScannerProps {
     expectedMealType?: 'breakfast' | 'lunch' | 'dinner'; // Which meal card was clicked
 }
 
+type ScanMode = 'live' | 'upload';
+
 export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: StudentQRScannerProps) {
     const { theme } = useTheme();
     const { user } = useAuth();
     const { showToast } = useToast();
     const [isProcessing, setIsProcessing] = useState(false);
     const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+    const [scanMode, setScanMode] = useState<ScanMode>('live'); // Default to live scanner
+    const [cameraError, setCameraError] = useState<string | null>(null);
+    
     const fileInputRef = useRef<HTMLInputElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const animationRef = useRef<number | null>(null);
+
+    // Start camera stream
+    const startCamera = useCallback(async () => {
+        setCameraError(null);
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' } // Prefer back camera
+            });
+            streamRef.current = stream;
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                await videoRef.current.play();
+            }
+        } catch (err) {
+            console.error('Camera error:', err);
+            setCameraError('Could not access camera. Please allow camera permission or use file upload.');
+        }
+    }, []);
+
+    // Stop camera stream
+    const stopCamera = useCallback(() => {
+        if (animationRef.current) {
+            cancelAnimationFrame(animationRef.current);
+            animationRef.current = null;
+        }
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+        }
+    }, []);
+
+    // Scan video frame for QR code
+    const scanFrame = useCallback(() => {
+        if (!videoRef.current || !canvasRef.current || isProcessing || result) return;
+
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.drawImage(video, 0, 0);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+                
+                if (code && code.data) {
+                    console.log('[Student] QR detected from live scan');
+                    processQRData(code.data);
+                    return; // Stop scanning after finding a code
+                }
+            }
+        }
+        
+        // Continue scanning
+        animationRef.current = requestAnimationFrame(scanFrame);
+    }, [isProcessing, result]);
+
+    // Start/stop camera based on modal and mode
+    useEffect(() => {
+        if (isOpen && scanMode === 'live' && !result) {
+            startCamera();
+        } else {
+            stopCamera();
+        }
+        return () => stopCamera();
+    }, [isOpen, scanMode, result, startCamera, stopCamera]);
+
+    // Start scanning loop when camera is ready
+    useEffect(() => {
+        if (isOpen && scanMode === 'live' && !result && !isProcessing) {
+            const video = videoRef.current;
+            if (video) {
+                const handlePlay = () => {
+                    animationRef.current = requestAnimationFrame(scanFrame);
+                };
+                video.addEventListener('playing', handlePlay);
+                return () => video.removeEventListener('playing', handlePlay);
+            }
+        }
+    }, [isOpen, scanMode, result, isProcessing, scanFrame]);
 
     // Reset when modal opens
     useEffect(() => {
         if (isOpen) {
             setResult(null);
             setIsProcessing(false);
+            setScanMode('live'); // Reset to live mode when opening
+            setCameraError(null);
         }
     }, [isOpen]);
 
@@ -42,6 +137,7 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
             return;
         }
 
+        setIsProcessing(true);
         console.log('[Student] Processing QR:', qrData.substring(0, 50));
 
         // Validate QR first
@@ -151,6 +247,7 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
     };
 
     const handleClose = () => {
+        stopCamera();
         setResult(null);
         setIsProcessing(false);
         onClose();
@@ -158,7 +255,11 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
 
     const handleRetry = () => {
         setResult(null);
-        fileInputRef.current?.click();
+        if (scanMode === 'live') {
+            startCamera();
+        } else {
+            fileInputRef.current?.click();
+        }
     };
 
     if (!isOpen) return null;
@@ -187,7 +288,7 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
                             Mark Attendance
                         </h3>
                         <p className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                            Upload photo of admin's QR
+                            {scanMode === 'live' ? 'Point camera at QR code' : 'Upload photo of QR'}
                         </p>
                     </div>
                     <button
@@ -203,6 +304,34 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
                         </svg>
                     </button>
                 </div>
+
+                {/* Mode Toggle */}
+                {!result && (
+                    <div className="px-4 pt-3">
+                        <div className={`flex rounded-lg p-1 ${theme === 'dark' ? 'bg-white/5' : 'bg-gray-100'}`}>
+                            <button
+                                onClick={() => setScanMode('live')}
+                                className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${
+                                    scanMode === 'live'
+                                        ? 'bg-green-500 text-white shadow-sm'
+                                        : theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                📷 Live Scan
+                            </button>
+                            <button
+                                onClick={() => setScanMode('upload')}
+                                className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${
+                                    scanMode === 'upload'
+                                        ? 'bg-green-500 text-white shadow-sm'
+                                        : theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                📁 Upload
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Content */}
                 <div className="p-4">
@@ -244,8 +373,55 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
                                 </button>
                             </div>
                         </div>
+                    ) : scanMode === 'live' ? (
+                        // Live Camera Scanner
+                        <div className="relative rounded-xl overflow-hidden bg-black aspect-[4/3]">
+                            {cameraError ? (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
+                                    <span className="text-4xl mb-3">📵</span>
+                                    <p className={`text-center text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                                        {cameraError}
+                                    </p>
+                                    <button
+                                        onClick={() => setScanMode('upload')}
+                                        className="mt-4 px-4 py-2 rounded-lg text-sm font-medium bg-green-500 text-white hover:bg-green-400"
+                                    >
+                                        Use Upload Instead
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    <video
+                                        ref={videoRef}
+                                        className="w-full h-full object-cover"
+                                        playsInline
+                                        muted
+                                    />
+                                    {/* Scanning overlay */}
+                                    <div className="absolute inset-0 pointer-events-none">
+                                        <div className="absolute inset-0 border-2 border-green-500/50">
+                                            {/* Corner markers */}
+                                            <div className="absolute top-4 left-4 w-8 h-8 border-t-4 border-l-4 border-green-400 rounded-tl-lg" />
+                                            <div className="absolute top-4 right-4 w-8 h-8 border-t-4 border-r-4 border-green-400 rounded-tr-lg" />
+                                            <div className="absolute bottom-4 left-4 w-8 h-8 border-b-4 border-l-4 border-green-400 rounded-bl-lg" />
+                                            <div className="absolute bottom-4 right-4 w-8 h-8 border-b-4 border-r-4 border-green-400 rounded-br-lg" />
+                                        </div>
+                                        {/* Scanning line animation */}
+                                        <div className="absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-green-400 to-transparent animate-pulse" 
+                                            style={{ top: '50%' }} 
+                                        />
+                                    </div>
+                                    {/* Processing indicator */}
+                                    {isProcessing && (
+                                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                            <div className="w-10 h-10 border-3 border-green-500 border-t-transparent rounded-full animate-spin" />
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
                     ) : (
-                        // Upload
+                        // Upload Mode
                         <div 
                             onClick={() => !isProcessing && fileInputRef.current?.click()}
                             className={`py-16 rounded-xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all ${
@@ -298,7 +474,10 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
                 {!result && !isProcessing && (
                     <div className={`px-4 pb-4 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
                         <p className="text-xs text-center">
-                            💡 Make sure the QR code is clearly visible and in focus
+                            {scanMode === 'live' 
+                                ? '💡 Hold steady and point camera at the QR code'
+                                : '💡 Make sure the QR code is clearly visible and in focus'
+                            }
                         </p>
                     </div>
                 )}
@@ -306,3 +485,4 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
         </div>
     );
 }
+

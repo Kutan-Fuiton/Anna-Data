@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getTodayAttendanceStats, getTodayAttendance, type MealAttendance } from '../../services/firestore';
 
 type TimeRange = 'daily' | 'weekly' | 'monthly';
 
@@ -14,19 +13,6 @@ interface Complaint {
 
 export default function AdminDashboard() {
     const [timeRange, setTimeRange] = useState<TimeRange>('daily');
-    const [attendanceStats, setAttendanceStats] = useState({ breakfast: 0, lunch: 0, dinner: 0, total: 0 });
-    const [recentScans, setRecentScans] = useState<MealAttendance[]>([]);
-
-    // Fetch attendance stats
-    useEffect(() => {
-        const fetchStats = async () => {
-            const stats = await getTodayAttendanceStats();
-            setAttendanceStats(stats);
-            const scans = await getTodayAttendance();
-            setRecentScans(scans.slice(0, 5));
-        };
-        fetchStats();
-    }, []); // Refresh on mount
 
     // Mock data
     const lastUpdated = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -93,46 +79,6 @@ export default function AdminDashboard() {
                         <span>+</span> <span className="hidden sm:inline">New</span> Entry
                     </button>
                 </div>
-            </div>
-
-            {/* Today's Attendance Card */}
-            <div className="bg-gradient-to-r from-teal-500 to-teal-600 text-white p-5 mb-6 rounded-lg">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h2 className="text-lg font-semibold mb-1">Today's Attendance</h2>
-                        <p className="text-teal-100 text-sm">Students checked in via QR</p>
-                    </div>
-                    <div className="flex gap-6">
-                        <div className="text-center">
-                            <p className="text-3xl font-bold">{attendanceStats.breakfast}</p>
-                            <p className="text-xs text-teal-100">Breakfast</p>
-                        </div>
-                        <div className="text-center">
-                            <p className="text-3xl font-bold">{attendanceStats.lunch}</p>
-                            <p className="text-xs text-teal-100">Lunch</p>
-                        </div>
-                        <div className="text-center">
-                            <p className="text-3xl font-bold">{attendanceStats.dinner}</p>
-                            <p className="text-xs text-teal-100">Dinner</p>
-                        </div>
-                        <div className="text-center border-l border-teal-400 pl-6">
-                            <p className="text-3xl font-bold">{attendanceStats.total}</p>
-                            <p className="text-xs text-teal-100">Total</p>
-                        </div>
-                    </div>
-                </div>
-                {recentScans.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-teal-400">
-                        <p className="text-xs text-teal-100 mb-2">Recent Scans:</p>
-                        <div className="flex gap-2 flex-wrap">
-                            {recentScans.map((scan, i) => (
-                                <span key={i} className="text-xs bg-teal-700/50 px-2 py-1 rounded">
-                                    {scan.userName || 'Student'} - {scan.mealType}
-                                </span>
-                            ))}
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* KPI Cards */}
