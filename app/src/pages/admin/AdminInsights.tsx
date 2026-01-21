@@ -5,17 +5,15 @@ import {
 } from 'recharts';
 import {
     getAnalytics, getLastUpdatedTimestamp,
-    type TimeRange, type AnalyticsSummary, type WasteLevel
+    type AnalyticsSummary, type WasteLevel
 } from '../../services/analyticsService';
-
-interface AIInsight {
-    id: string;
-    type: 'issue' | 'improvement' | 'stable';
-    title: string;
-    description: string;
-    frequency?: number;
-    trend?: 'up' | 'down' | 'stable';
-}
+import {
+    fetchAIInsights,
+    regenerateAIInsights,
+    type StructuredAIInsights,
+    type AIInsightItem,
+    type TimeRange
+} from '../../services/firestore';
 
 export default function AdminInsights() {
     const [timeRange, setTimeRange] = useState<TimeRange>('weekly');
@@ -24,69 +22,68 @@ export default function AdminInsights() {
     const [lastGenerated, setLastGenerated] = useState<string>('');
     const [isLoading, setIsLoading] = useState(true);
 
+    // Real AI insights state
+    const [aiInsights, setAiInsights] = useState<StructuredAIInsights | null>(null);
+    const [isLoadingAI, setIsLoadingAI] = useState(true);
+    const [isRegenerating, setIsRegenerating] = useState(false);
+
     // Load analytics data when time range changes
     useEffect(() => {
         setIsLoading(true);
-        // Simulate API delay
         const timer = setTimeout(() => {
             setAnalytics(getAnalytics(timeRange));
-            setLastGenerated(getLastUpdatedTimestamp());
             setIsLoading(false);
         }, 300);
         return () => clearTimeout(timer);
     }, [timeRange]);
 
-    // AI-Generated Insights (simulated cached data from Gemini)
-    const aiInsights: AIInsight[] = [
-        {
-            id: '1',
-            type: 'issue',
-            title: 'Paneer dishes consistently too oily',
-            description: 'Students have reported oily texture in Paneer Butter Masala and Shahi Paneer for 3 consecutive weeks. Consider reducing oil/butter by 15-20%.',
-            frequency: 47,
-            trend: 'up',
-        },
-        {
-            id: '2',
-            type: 'issue',
-            title: 'Rice undercooked on weekends',
-            description: 'Weekend batches of rice (Saturday lunch, Sunday dinner) show higher complaint rates. May be related to different cooking staff or timing.',
-            frequency: 23,
-            trend: 'stable',
-        },
-        {
-            id: '3',
-            type: 'issue',
-            title: 'Dal temperature inconsistent',
-            description: 'Dal Tadka and Dal Makhani served cold in late servings. Consider better thermal containers or staggered preparation.',
-            frequency: 18,
-            trend: 'down',
-        },
-        {
-            id: '4',
-            type: 'improvement',
-            title: 'Roti quality improved significantly',
-            description: 'Complaints about hard/stale rotis dropped by 65% after switching to the new atta supplier last month.',
-            frequency: 5,
-            trend: 'down',
-        },
-        {
-            id: '5',
-            type: 'stable',
-            title: 'Chole Bhature remains top-rated',
-            description: 'Consistently high ratings (4.5+) for the past 8 weeks. Consider featuring it more frequently in the weekly menu.',
-            frequency: 2,
-            trend: 'stable',
-        },
-        {
-            id: '6',
-            type: 'stable',
-            title: 'Breakfast items performing well',
-            description: 'Poha, Upma, and Idli-Sambar maintain steady satisfaction scores. No action needed.',
-            frequency: 3,
-            trend: 'stable',
-        },
-    ];
+    // Load AI insights when time range changes
+    useEffect(() => {
+        loadAIInsights();
+    }, [timeRange]);
+
+    const loadAIInsights = async () => {
+        setIsLoadingAI(true);
+        try {
+            const insights = await fetchAIInsights(timeRange);
+            setAiInsights(insights);
+            if (insights?.generatedAt) {
+                setLastGenerated(formatDate(insights.generatedAt));
+            } else {
+                setLastGenerated('Never');
+            }
+        } catch (error) {
+            console.error('Failed to load AI insights:', error);
+        } finally {
+            setIsLoadingAI(false);
+        }
+    };
+
+    const handleRegenerate = async () => {
+        setIsRegenerating(true);
+        try {
+            const insights = await regenerateAIInsights(timeRange);
+            if (insights) {
+                setAiInsights(insights);
+                setLastGenerated(formatDate(new Date()));
+            }
+        } catch (error) {
+            console.error('Failed to regenerate AI insights:', error);
+        } finally {
+            setIsRegenerating(false);
+        }
+    };
+
+    const formatDate = (date: Date) => {
+        return date.toLocaleDateString('en-US', {
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+        });
+    };
 
     // Color schemes
     const WASTE_LEVEL_COLORS: Record<WasteLevel, string> = {
@@ -96,9 +93,7 @@ export default function AdminInsights() {
         HIGH: '#ef4444',   // red
     };
 
-    const CATEGORY_COLORS = ['#22c55e', '#f59e0b', '#3b82f6', '#ef4444'];
-
-    const getInsightIcon = (type: AIInsight['type']) => {
+    const getInsightStyle = (type: 'issue' | 'improvement' | 'stable') => {
         switch (type) {
             case 'issue': return { icon: '⚠️', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700' };
             case 'improvement': return { icon: '📈', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700' };
@@ -106,7 +101,7 @@ export default function AdminInsights() {
         }
     };
 
-    const getTrendIcon = (trend?: AIInsight['trend']) => {
+    const getTrendIcon = (trend?: 'up' | 'down' | 'stable') => {
         switch (trend) {
             case 'up': return '↑';
             case 'down': return '↓';
@@ -131,6 +126,14 @@ export default function AdminInsights() {
         monthly: 'This Month',
     };
 
+    // Transform AI insights for display
+    const issueInsights: AIInsightItem[] = aiInsights?.issues || [];
+    const improvementInsights: AIInsightItem[] = aiInsights?.improvements || [];
+    const stableInsights: AIInsightItem[] = aiInsights?.wellPerforming || [];
+
+    const hasNoInsights = !isLoadingAI && (!aiInsights ||
+        (issueInsights.length === 0 && improvementInsights.length === 0 && stableInsights.length === 0));
+
     return (
         <div className="p-4 sm:p-6 bg-gray-50 min-h-screen">
             {/* Header */}
@@ -142,16 +145,29 @@ export default function AdminInsights() {
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
                     <div className="text-left sm:text-right">
                         <p className="text-xs text-gray-400">AI Analysis last generated</p>
-                        <p className="text-sm text-gray-600 font-medium">{lastGenerated}</p>
+                        <p className="text-sm text-gray-600 font-medium">{lastGenerated || 'Loading...'}</p>
                     </div>
                     <button
-                        onClick={() => {
-                            setAnalytics(getAnalytics(timeRange));
-                            setLastGenerated(getLastUpdatedTimestamp());
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 bg-[#0d2137] text-white text-sm font-medium hover:bg-[#152d4a] transition-colors"
+                        onClick={handleRegenerate}
+                        disabled={isRegenerating}
+                        className={`flex items-center gap-2 px-4 py-2 text-white text-sm font-medium transition-colors ${isRegenerating
+                                ? 'bg-gray-400 cursor-not-allowed'
+                                : 'bg-[#0d2137] hover:bg-[#152d4a]'
+                            }`}
                     >
-                        <span>🔄</span> Regenerate
+                        {isRegenerating ? (
+                            <>
+                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                                <span>Analyzing...</span>
+                            </>
+                        ) : (
+                            <>
+                                <span>🔄</span> Regenerate
+                            </>
+                        )}
                     </button>
                 </div>
             </div>
@@ -207,72 +223,145 @@ export default function AdminInsights() {
                         <span className="text-2xl">🤖</span>
                         <div>
                             <p className="font-medium text-gray-900">Powered by Gemini AI</p>
-                            <p className="text-sm text-gray-500">Analysis is cached and regenerated {timeRange}. Shows relative trends, not absolute predictions.</p>
+                            <p className="text-sm text-gray-500">
+                                Analysis is generated from real student feedback. Shows patterns and trends from actual submissions.
+                                {aiInsights?.meta && (
+                                    <span className="ml-2 text-purple-600">
+                                        ({aiInsights.meta.totalFeedback} feedback entries analyzed)
+                                    </span>
+                                )}
+                            </p>
                         </div>
                     </div>
 
-                    {/* Insights Grid */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* Top Issues */}
-                        <div className="bg-white border border-gray-200 p-5">
-                            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                <span className="text-red-500">⚠️</span> Top Issues {timeRangeLabels[timeRange]}
-                            </h3>
-                            <div className="space-y-3">
-                                {aiInsights.filter(i => i.type === 'issue').map((insight) => {
-                                    const style = getInsightIcon(insight.type);
-                                    return (
-                                        <div key={insight.id} className={`p-4 ${style.bg} border ${style.border}`}>
-                                            <div className="flex items-start justify-between mb-2">
-                                                <h4 className={`font-medium ${style.text}`}>{insight.title}</h4>
-                                                <span className="text-xs bg-white px-2 py-0.5 border border-gray-200">
-                                                    {insight.frequency} mentions {getTrendIcon(insight.trend)}
-                                                </span>
-                                            </div>
-                                            <p className="text-sm text-gray-600">{insight.description}</p>
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                    {/* Loading State */}
+                    {isLoadingAI && (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {[1, 2].map(i => (
+                                <div key={i} className="bg-white border border-gray-200 p-5 animate-pulse">
+                                    <div className="h-6 bg-gray-200 rounded w-48 mb-4"></div>
+                                    <div className="space-y-3">
+                                        {[1, 2, 3].map(j => (
+                                            <div key={j} className="h-24 bg-gray-100 rounded"></div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
+                    )}
 
-                        {/* Right Column */}
-                        <div className="space-y-4">
-                            {/* Improvements */}
+                    {/* No Data State */}
+                    {hasNoInsights && (
+                        <div className="bg-white border border-gray-200 p-8 text-center">
+                            <span className="text-4xl mb-4 block">📊</span>
+                            <h3 className="text-lg font-semibold text-gray-900 mb-2">No AI Insights Available</h3>
+                            <p className="text-gray-500 mb-4">
+                                {aiInsights?.summary || `No student feedback has been submitted for the ${timeRange} period yet.`}
+                            </p>
+                            <button
+                                onClick={handleRegenerate}
+                                disabled={isRegenerating}
+                                className="px-4 py-2 bg-[#0d2137] text-white text-sm font-medium hover:bg-[#152d4a] transition-colors"
+                            >
+                                Generate Insights from Current Data
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Insights Grid */}
+                    {!isLoadingAI && !hasNoInsights && (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {/* Top Issues */}
                             <div className="bg-white border border-gray-200 p-5">
                                 <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                    <span className="text-green-500">📈</span> Recent Improvements
+                                    <span className="text-red-500">⚠️</span> Top Issues {timeRangeLabels[timeRange]}
                                 </h3>
-                                {aiInsights.filter(i => i.type === 'improvement').map((insight) => {
-                                    const style = getInsightIcon(insight.type);
-                                    return (
-                                        <div key={insight.id} className={`p-4 ${style.bg} border ${style.border}`}>
-                                            <h4 className={`font-medium ${style.text} mb-1`}>{insight.title}</h4>
-                                            <p className="text-sm text-gray-600">{insight.description}</p>
-                                        </div>
-                                    );
-                                })}
+                                {issueInsights.length === 0 ? (
+                                    <p className="text-gray-500 text-sm p-4 bg-gray-50 rounded">
+                                        No significant issues detected in the current period. 🎉
+                                    </p>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {issueInsights.map((insight) => {
+                                            const style = getInsightStyle('issue');
+                                            return (
+                                                <div key={insight.id} className={`p-4 ${style.bg} border ${style.border}`}>
+                                                    <div className="flex items-start justify-between mb-2">
+                                                        <h4 className={`font-medium ${style.text}`}>{insight.title}</h4>
+                                                        {insight.frequency && (
+                                                            <span className="text-xs bg-white px-2 py-0.5 border border-gray-200">
+                                                                {insight.frequency} mentions {getTrendIcon(insight.trend)}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-gray-600">{insight.description}</p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
 
-                            {/* Stable Items */}
-                            <div className="bg-white border border-gray-200 p-5">
-                                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                    <span className="text-blue-500">✓</span> Well-Performing Dishes
-                                </h3>
-                                <div className="space-y-3">
-                                    {aiInsights.filter(i => i.type === 'stable').map((insight) => {
-                                        const style = getInsightIcon(insight.type);
-                                        return (
-                                            <div key={insight.id} className={`p-3 ${style.bg} border ${style.border}`}>
-                                                <h4 className={`font-medium text-sm ${style.text}`}>{insight.title}</h4>
-                                                <p className="text-xs text-gray-500 mt-1">{insight.description}</p>
-                                            </div>
-                                        );
-                                    })}
+                            {/* Right Column */}
+                            <div className="space-y-4">
+                                {/* Improvements */}
+                                <div className="bg-white border border-gray-200 p-5">
+                                    <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                        <span className="text-green-500">📈</span> Recent Improvements
+                                    </h3>
+                                    {improvementInsights.length === 0 ? (
+                                        <p className="text-gray-500 text-sm p-4 bg-gray-50 rounded">
+                                            No specific improvements noted yet.
+                                        </p>
+                                    ) : (
+                                        improvementInsights.map((insight) => {
+                                            const style = getInsightStyle('improvement');
+                                            return (
+                                                <div key={insight.id} className={`p-4 ${style.bg} border ${style.border} mb-3`}>
+                                                    <h4 className={`font-medium ${style.text} mb-1`}>{insight.title}</h4>
+                                                    <p className="text-sm text-gray-600">{insight.description}</p>
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
+
+                                {/* Stable Items */}
+                                <div className="bg-white border border-gray-200 p-5">
+                                    <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                        <span className="text-blue-500">✓</span> Well-Performing Dishes
+                                    </h3>
+                                    {stableInsights.length === 0 ? (
+                                        <p className="text-gray-500 text-sm p-4 bg-gray-50 rounded">
+                                            More feedback needed to identify top performers.
+                                        </p>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {stableInsights.map((insight) => {
+                                                const style = getInsightStyle('stable');
+                                                return (
+                                                    <div key={insight.id} className={`p-3 ${style.bg} border ${style.border}`}>
+                                                        <h4 className={`font-medium text-sm ${style.text}`}>{insight.title}</h4>
+                                                        <p className="text-xs text-gray-500 mt-1">{insight.description}</p>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    )}
+
+                    {/* AI Summary */}
+                    {!isLoadingAI && aiInsights?.summary && !hasNoInsights && (
+                        <div className="bg-white border border-gray-200 p-5">
+                            <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                <span>📝</span> Executive Summary
+                            </h3>
+                            <p className="text-gray-700 leading-relaxed">{aiInsights.summary}</p>
+                        </div>
+                    )}
                 </div>
             )}
 

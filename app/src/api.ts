@@ -3,7 +3,7 @@
  * Handles communication with the food waste analysis API
  */
 
-const API_BASE_URL = 'http://localhost:8000';
+import { API_BASE_URL } from './config/apiConfig';
 
 export interface FoodDetail {
     item: string;

@@ -3,7 +3,7 @@
  * Frontend service for calling backend QR code endpoints
  */
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { API_BASE_URL } from '../config/apiConfig';
 
 interface QRResponse {
     success: boolean;
@@ -21,7 +21,7 @@ export async function generateQR(
     forceRefresh: boolean = false
 ): Promise<{ success: boolean; qrData?: string; error?: string }> {
     try {
-        const response = await fetch(`${API_URL}/qr/generate`, {
+        const response = await fetch(`${API_BASE_URL}/qr/generate`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -52,7 +52,7 @@ export async function getQR(
     mealType: 'breakfast' | 'lunch' | 'dinner'
 ): Promise<{ success: boolean; qrData?: string; error?: string }> {
     try {
-        const response = await fetch(`${API_URL}/qr/${mealType}`);
+        const response = await fetch(`${API_BASE_URL}/qr/${mealType}`);
         const data: QRResponse = await response.json();
 
         if (data.success && data.qr_data) {

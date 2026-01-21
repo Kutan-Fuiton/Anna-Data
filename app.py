@@ -372,6 +372,172 @@ async def generate_weekly_summary():
         raise HTTPException(status_code=500, detail=f"Failed to generate summary: {str(e)}")
 
 
+class AIInsightsRequest(BaseModel):
+    time_range: str = "weekly"  # 'daily', 'weekly', or 'monthly'
+
+
+@app.post("/generate-ai-insights")
+async def generate_ai_insights(request: AIInsightsRequest):
+    """
+    Generate structured AI insights from student meal feedback.
+    Returns categorized insights: issues, improvements, well-performing dishes.
+    """
+    try:
+        from google.cloud import firestore
+        from datetime import timedelta
+        import os
+        
+        # Initialize Firestore (uses GOOGLE_APPLICATION_CREDENTIALS env var)
+        service_key_path = Path(__file__).parent / "serviceAccountKey.json"
+        if not service_key_path.exists():
+            service_key_path = Path(__file__).parent / "mess-o-meter-backend" / "serviceAccountKey.json"
+            
+        if service_key_path.exists():
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(service_key_path)
+        
+        db = firestore.Client()
+        
+        # Determine date range
+        now = datetime.utcnow()
+        if request.time_range == "daily":
+            start_date = now - timedelta(days=1)
+        elif request.time_range == "monthly":
+            start_date = now - timedelta(days=30)
+        else:  # weekly (default)
+            start_date = now - timedelta(days=7)
+        
+        # Fetch meal feedback within range
+        feedback_query = db.collection("mealFeedback").where("createdAt", ">=", start_date)
+        feedback_docs = feedback_query.stream()
+        
+        # Aggregate feedback data
+        aggregated_data = {
+            "timeRange": request.time_range,
+            "totalFeedback": 0,
+            "mealTypes": {},
+            "comments": [],
+            "wasteAnalysis": {
+                "totalAnalyses": 0,
+                "wasteLevelCounts": {"NONE": 0, "LOW": 0, "MEDIUM": 0, "HIGH": 0},
+                "avgCoveragePercent": 0,
+                "foodItemsWasted": {}
+            },
+            "ratingAverages": {"taste": [], "oil": [], "quantity": [], "hygiene": []}
+        }
+        
+        for doc in feedback_docs:
+            data = doc.to_dict()
+            aggregated_data["totalFeedback"] += 1
+            
+            # Track by meal type
+            meal_type = data.get("mealType", "unknown")
+            if meal_type not in aggregated_data["mealTypes"]:
+                aggregated_data["mealTypes"][meal_type] = {"count": 0, "ratings": []}
+            aggregated_data["mealTypes"][meal_type]["count"] += 1
+            
+            # Collect comments
+            comment = data.get("comment") or data.get("text") or ""
+            if comment.strip():
+                aggregated_data["comments"].append({
+                    "mealType": meal_type,
+                    "text": comment[:200],  # Limit length
+                    "ratings": data.get("ratings", {})
+                })
+            
+            # Aggregate ratings
+            ratings = data.get("ratings", {})
+            for key in ["taste", "oil", "quantity", "hygiene"]:
+                if key in ratings and isinstance(ratings[key], (int, float)):
+                    aggregated_data["ratingAverages"][key].append(ratings[key])
+            
+            # Aggregate waste analysis
+            waste = data.get("wasteAnalysis")
+            if waste:
+                aggregated_data["wasteAnalysis"]["totalAnalyses"] += 1
+                waste_level = waste.get("wasteLevel", "NONE")
+                if waste_level in aggregated_data["wasteAnalysis"]["wasteLevelCounts"]:
+                    aggregated_data["wasteAnalysis"]["wasteLevelCounts"][waste_level] += 1
+                
+                coverage = waste.get("coveragePercent", 0)
+                aggregated_data["wasteAnalysis"]["avgCoveragePercent"] += coverage
+                
+                food_items = waste.get("foodItems", {})
+                for item, count in food_items.items():
+                    current = aggregated_data["wasteAnalysis"]["foodItemsWasted"].get(item, 0)
+                    aggregated_data["wasteAnalysis"]["foodItemsWasted"][item] = current + count
+        
+        # Calculate averages
+        for key in ["taste", "oil", "quantity", "hygiene"]:
+            values = aggregated_data["ratingAverages"][key]
+            if values:
+                aggregated_data["ratingAverages"][key] = round(sum(values) / len(values), 2)
+            else:
+                aggregated_data["ratingAverages"][key] = 0
+        
+        if aggregated_data["wasteAnalysis"]["totalAnalyses"] > 0:
+            aggregated_data["wasteAnalysis"]["avgCoveragePercent"] = round(
+                aggregated_data["wasteAnalysis"]["avgCoveragePercent"] / 
+                aggregated_data["wasteAnalysis"]["totalAnalyses"], 1
+            )
+        
+        # No feedback guard
+        if aggregated_data["totalFeedback"] == 0:
+            empty_insights = {
+                "issues": [],
+                "improvements": [],
+                "wellPerforming": [],
+                "summary": f"No feedback data available for the {request.time_range} period."
+            }
+            return {
+                "success": True,
+                "insights": empty_insights,
+                "generatedAt": datetime.utcnow().isoformat()
+            }
+        
+        # Generate structured AI insights using Gemini
+        insights = await gemini_service.generate_structured_insights(
+            aggregated_data, 
+            request.time_range
+        )
+        
+        if not insights:
+            # Fallback if AI fails
+            insights = {
+                "issues": [],
+                "improvements": [],
+                "wellPerforming": [],
+                "summary": "AI analysis temporarily unavailable. Please try again later."
+            }
+        
+        # Save to Firestore
+        doc_id = f"insights_{request.time_range}"
+        db.collection("aiSummaries").document(doc_id).set({
+            "type": "structured_insights",
+            "timeRange": request.time_range,
+            "insights": insights,
+            "aggregatedData": {
+                "totalFeedback": aggregated_data["totalFeedback"],
+                "wasteAnalyses": aggregated_data["wasteAnalysis"]["totalAnalyses"],
+                "ratingAverages": aggregated_data["ratingAverages"]
+            },
+            "generatedAt": datetime.utcnow()
+        })
+        
+        return {
+            "success": True,
+            "insights": insights,
+            "meta": {
+                "totalFeedback": aggregated_data["totalFeedback"],
+                "wasteAnalyses": aggregated_data["wasteAnalysis"]["totalAnalyses"],
+                "timeRange": request.time_range
+            },
+            "generatedAt": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate insights: {str(e)}")
+
+
 # ============== QR Code API Endpoints ==============
 
 class QRGenerateRequest(BaseModel):
@@ -424,16 +590,18 @@ async def generate_qr(request: QRGenerateRequest):
         raise HTTPException(status_code=400, detail="Invalid meal_type. Must be breakfast, lunch, or dinner.")
     
     try:
-        # Import firebase_admin here to avoid startup issues
-        import firebase_admin
-        from firebase_admin import credentials, firestore
+        from google.cloud import firestore
+        import os
         
-        # Initialize Firebase if not already done
-        if not firebase_admin._apps:
-            cred = credentials.Certificate("serviceAccountKey.json")
-            firebase_admin.initialize_app(cred)
+        # Initialize Firestore
+        service_key_path = Path(__file__).parent / "serviceAccountKey.json"
+        if not service_key_path.exists():
+            service_key_path = Path(__file__).parent / "mess-o-meter-backend" / "serviceAccountKey.json"
+            
+        if service_key_path.exists():
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(service_key_path)
         
-        db = firestore.client()
+        db = firestore.Client()
         date_str = get_today_date_str()
         doc_id = f"{meal_type}_{date_str}"
         doc_ref = db.collection("adminAttendanceQR").document(doc_id)
@@ -463,7 +631,7 @@ async def generate_qr(request: QRGenerateRequest):
             "date": date_str,
             "qrData": qr_data,
             "qrId": payload["qrId"],
-            "createdAt": firestore.SERVER_TIMESTAMP
+            "createdAt": datetime.utcnow()
         })
         
         return QRResponse(
@@ -487,14 +655,18 @@ async def get_qr(meal_type: str):
         raise HTTPException(status_code=400, detail="Invalid meal_type.")
     
     try:
-        import firebase_admin
-        from firebase_admin import credentials, firestore
+        from google.cloud import firestore
+        import os
         
-        if not firebase_admin._apps:
-            cred = credentials.Certificate("serviceAccountKey.json")
-            firebase_admin.initialize_app(cred)
+        # Initialize Firestore
+        service_key_path = Path(__file__).parent / "serviceAccountKey.json"
+        if not service_key_path.exists():
+            service_key_path = Path(__file__).parent / "mess-o-meter-backend" / "serviceAccountKey.json"
+            
+        if service_key_path.exists():
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(service_key_path)
         
-        db = firestore.client()
+        db = firestore.Client()
         date_str = get_today_date_str()
         doc_id = f"{meal_type}_{date_str}"
         doc_ref = db.collection("adminAttendanceQR").document(doc_id)

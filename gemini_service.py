@@ -24,7 +24,7 @@ class GeminiInsightGenerator:
             genai.configure(api_key=api_key)
             self.model = genai.GenerativeModel("gemini-2.0-flash-exp")
             self.enabled = True
-            print("✓ Gemini AI service initialized successfully")
+            print("[OK] Gemini AI service initialized successfully")
     
     def _build_user_prompt(self, analysis: Dict, food_counts: Dict) -> str:
         """Build prompt for user-facing insight."""
@@ -178,6 +178,76 @@ Provide a concise summary including:
         except Exception as e:
             print(f"⚠️ Gemini weekly summary failed: {e}")
             return "No sufficient feedback data available for this period."
+
+    async def generate_structured_insights(self, aggregated_data: Dict, time_range: str = "weekly") -> Optional[Dict]:
+        """
+        Generate structured AI insights for admin dashboard.
+        Returns categorized insights: issues, improvements, well-performing items.
+        """
+        if not self.enabled:
+            return None
+        
+        try:
+            prompt = f"""You are an AI analyst for a college mess/cafeteria feedback system.
+Analyze the following aggregated student feedback data and generate structured insights.
+
+TIME RANGE: {time_range}
+FEEDBACK DATA:
+{aggregated_data}
+
+IMPORTANT RULES:
+- Base insights ONLY on actual data provided - do NOT invent statistics
+- If data is insufficient, clearly state that
+- Focus on patterns in ratings and comments
+- Extract specific dish names mentioned in feedback
+- Identify trending issues (things getting worse) vs improvements (things getting better)
+
+Respond with ONLY valid JSON in this exact format (no markdown, no extra text):
+{{
+    "issues": [
+        {{
+            "id": "1",
+            "title": "Brief issue title",
+            "description": "Detailed description with specific examples from feedback",
+            "frequency": <number of mentions or affected items>,
+            "trend": "up" | "down" | "stable"
+        }}
+    ],
+    "improvements": [
+        {{
+            "id": "1", 
+            "title": "Brief improvement title",
+            "description": "Details on what improved based on feedback"
+        }}
+    ],
+    "wellPerforming": [
+        {{
+            "id": "1",
+            "title": "Well performing dish/aspect",
+            "description": "Why this is performing well"
+        }}
+    ],
+    "summary": "One paragraph executive summary of the overall feedback trends"
+}}
+
+If there's no data for a category, return an empty array for that category.
+Limit to maximum 5 items per category."""
+
+            response = await self.model.generate_content_async(prompt)
+            response_text = response.text.strip()
+            
+            # Clean up response if it has markdown code blocks
+            if response_text.startswith("```"):
+                response_text = response_text.split("\n", 1)[1]  # Remove first line
+                if response_text.endswith("```"):
+                    response_text = response_text[:-3]
+                response_text = response_text.strip()
+            
+            import json
+            return json.loads(response_text)
+        except Exception as e:
+            print(f"⚠️ Gemini structured insights failed: {e}")
+            return None
 
 
 # Singleton instance

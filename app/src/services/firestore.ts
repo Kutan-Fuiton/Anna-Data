@@ -20,6 +20,7 @@ import {
     serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { API_BASE_URL } from '../config/apiConfig';
 
 // ============== Types ==============
 
@@ -602,6 +603,102 @@ export async function fetchWeeklyAISummary(): Promise<AISummary | null> {
         return null;
     } catch (error) {
         console.error('Error fetching AI summary:', error);
+        return null;
+    }
+}
+
+// ============== Structured AI Insights ==============
+
+export interface AIInsightItem {
+    id: string;
+    title: string;
+    description: string;
+    frequency?: number;
+    trend?: 'up' | 'down' | 'stable';
+}
+
+export interface StructuredAIInsights {
+    issues: AIInsightItem[];
+    improvements: AIInsightItem[];
+    wellPerforming: AIInsightItem[];
+    summary: string;
+    generatedAt?: Date;
+    meta?: {
+        totalFeedback: number;
+        wasteAnalyses: number;
+        timeRange: string;
+    };
+}
+
+export type TimeRange = 'daily' | 'weekly' | 'monthly';
+
+/**
+ * Fetch structured AI insights from Firestore
+ */
+export async function fetchAIInsights(timeRange: TimeRange = 'weekly'): Promise<StructuredAIInsights | null> {
+    try {
+        const docId = `insights_${timeRange}`;
+        const docRef = doc(db, 'aiSummaries', docId);
+        const snapshot = await getDoc(docRef);
+
+        if (snapshot.exists()) {
+            const data = snapshot.data();
+            const insights = data.insights || {};
+
+            return {
+                issues: insights.issues || [],
+                improvements: insights.improvements || [],
+                wellPerforming: insights.wellPerforming || [],
+                summary: insights.summary || '',
+                generatedAt: data.generatedAt?.toDate(),
+                meta: {
+                    totalFeedback: data.aggregatedData?.totalFeedback || 0,
+                    wasteAnalyses: data.aggregatedData?.wasteAnalyses || 0,
+                    timeRange: data.timeRange || timeRange
+                }
+            };
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Error fetching AI insights:', error);
+        return null;
+    }
+}
+
+/**
+ * Trigger AI insights regeneration via backend API
+ */
+export async function regenerateAIInsights(timeRange: TimeRange = 'weekly'): Promise<StructuredAIInsights | null> {
+    try {
+        const response = await fetch(`${API_BASE_URL}/generate-ai-insights`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ time_range: timeRange }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.success && data.insights) {
+            return {
+                issues: data.insights.issues || [],
+                improvements: data.insights.improvements || [],
+                wellPerforming: data.insights.wellPerforming || [],
+                summary: data.insights.summary || '',
+                generatedAt: data.generatedAt ? new Date(data.generatedAt) : new Date(),
+                meta: data.meta
+            };
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Error regenerating AI insights:', error);
         return null;
     }
 }

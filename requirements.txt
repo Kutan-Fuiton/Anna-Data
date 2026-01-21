@@ -1,7 +1,7 @@
 # YOLOv8 Food Detection Model - Dependencies
 
 ultralytics>=8.0.0
-opencv-python>=4.8.0
+opencv-python-headless>=4.8.0
 pillow>=10.0.0
 numpy>=1.24.0
 matplotlib>=3.7.0
@@ -10,7 +10,8 @@ PyYAML>=6.0
 
 # FastAPI Server Dependencies
 fastapi>=0.100.0
-uvicorn>=0.23.0
+uvicorn[standard]>=0.23.0
+gunicorn>=21.2.0
 python-multipart>=0.0.6
 
 # Google Gemini AI Integration
