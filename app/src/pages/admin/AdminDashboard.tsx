@@ -77,20 +77,20 @@ export default function AdminDashboard() {
     };
 
     return (
-        <div className="p-6 bg-gray-50 min-h-screen">
+        <div className="p-4 sm:p-6 bg-gray-50 min-h-screen">
             {/* Header */}
-            <div className="flex items-start justify-between mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Operational Dashboard</h1>
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Operational Dashboard</h1>
                     <p className="text-sm text-gray-500">Overview of operational efficiency and feedback metrics</p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <span className="text-sm text-gray-400">Last updated: Today, {lastUpdated}</span>
-                    <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors">
-                        <span>↓</span> Download Report
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                    <span className="text-xs sm:text-sm text-gray-400 hidden sm:inline">Last updated: Today, {lastUpdated}</span>
+                    <button className="flex items-center gap-2 px-3 py-2 border border-gray-300 bg-white text-gray-700 text-xs sm:text-sm font-medium hover:bg-gray-50 transition-colors">
+                        <span>↓</span> <span className="hidden sm:inline">Download</span> Report
                     </button>
-                    <button className="flex items-center gap-2 px-4 py-2 bg-[#0d2137] text-white text-sm font-medium hover:bg-[#152d4a] transition-colors">
-                        <span>+</span> New Entry
+                    <button className="flex items-center gap-2 px-3 py-2 bg-[#0d2137] text-white text-xs sm:text-sm font-medium hover:bg-[#152d4a] transition-colors">
+                        <span>+</span> <span className="hidden sm:inline">New</span> Entry
                     </button>
                 </div>
             </div>
@@ -136,7 +136,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* KPI Cards */}
-            <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 {/* Predicted vs Actual */}
                 <div className="bg-white border border-gray-200 p-5">
                     <div className="flex items-start justify-between mb-1">
@@ -185,9 +185,9 @@ export default function AdminDashboard() {
             </div>
 
             {/* Charts Section */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
                 {/* Attendance Accuracy Chart */}
-                <div className="col-span-2 bg-white border border-gray-200 p-5">
+                <div className="lg:col-span-2 bg-white border border-gray-200 p-4 sm:p-5">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="font-semibold text-gray-900">Attendance Accuracy</h3>
                         <div className="flex border border-gray-200">
@@ -246,41 +246,43 @@ export default function AdminDashboard() {
             </div>
 
             {/* Dish Complaint Frequency Table */}
-            <div className="bg-white border border-gray-200 p-5">
-                <div className="flex items-center justify-between mb-4">
+            <div className="bg-white border border-gray-200 p-4 sm:p-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
                     <h3 className="font-semibold text-gray-900">Dish Complaint Frequency</h3>
                     <button className="text-sm text-teal-600 hover:text-teal-700 font-medium">
                         View All Feedback
                     </button>
                 </div>
-                <table className="w-full">
-                    <thead>
-                        <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                            <th className="pb-3">Dish Name</th>
-                            <th className="pb-3">Complaint Type</th>
-                            <th className="pb-3">Frequency</th>
-                            <th className="pb-3">Sentiment Score</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {complaints.map((complaint) => {
-                            const style = getSentimentStyle(complaint.sentiment);
-                            return (
-                                <tr key={complaint.id} className="border-t border-gray-100">
-                                    <td className="py-3 text-gray-900 font-medium">{complaint.dishName}</td>
-                                    <td className="py-3 text-gray-500">{complaint.complaintType}</td>
-                                    <td className="py-3 text-gray-900 font-semibold">{complaint.frequency}</td>
-                                    <td className="py-3">
-                                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium uppercase ${style.bg} ${style.text}`}>
-                                            <span className={`w-2 h-2 ${style.dot}`}></span>
-                                            {complaint.sentiment}
-                                        </span>
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                    <table className="w-full min-w-[500px]">
+                        <thead>
+                            <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                <th className="pb-3">Dish Name</th>
+                                <th className="pb-3">Complaint Type</th>
+                                <th className="pb-3">Frequency</th>
+                                <th className="pb-3">Sentiment Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {complaints.map((complaint) => {
+                                const style = getSentimentStyle(complaint.sentiment);
+                                return (
+                                    <tr key={complaint.id} className="border-t border-gray-100">
+                                        <td className="py-3 text-gray-900 font-medium">{complaint.dishName}</td>
+                                        <td className="py-3 text-gray-500">{complaint.complaintType}</td>
+                                        <td className="py-3 text-gray-900 font-semibold">{complaint.frequency}</td>
+                                        <td className="py-3">
+                                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium uppercase ${style.bg} ${style.text}`}>
+                                                <span className={`w-2 h-2 ${style.dot}`}></span>
+                                                {complaint.sentiment}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     );

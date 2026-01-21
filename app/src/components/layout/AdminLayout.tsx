@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
@@ -14,6 +15,7 @@ export default function AdminLayout() {
     const navigate = useNavigate();
     const location = useLocation();
     const { username } = useParams<{ username: string }>();
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     // Dynamic nav items based on username
     const navItems = [
@@ -25,6 +27,13 @@ export default function AdminLayout() {
     const handleLogout = async () => {
         await logout();
         navigate('/', { replace: true });
+    };
+
+    // Close sidebar when navigating on mobile
+    const handleNavClick = () => {
+        if (window.innerWidth < 1024) {
+            setSidebarOpen(false);
+        }
     };
 
     // Generate initials from display name or email
@@ -56,11 +65,45 @@ export default function AdminLayout() {
     const finalDisplayName = getFormattedName();
 
     return (
-        <div className="min-h-screen flex bg-gray-50">
-            {/* Sidebar */}
-            <aside className="w-56 flex flex-col fixed h-full bg-[#0d2137] text-white">
-                {/* Logo */}
-                <div className="p-5 flex items-center gap-3 border-b border-white/10">
+        <div className="min-h-screen bg-gray-50">
+            {/* Mobile Header with Hamburger */}
+            <div className="lg:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-[#0d2137] text-white">
+                <div className="flex items-center gap-3">
+                    <img src="/logo.png" alt="AnnaData" className="h-8 w-8 object-contain" />
+                    <span className="font-bold">AnnaData Admin</span>
+                </div>
+                <button
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    className="p-2 rounded-lg text-gray-300 hover:text-white hover:bg-white/10"
+                >
+                    {sidebarOpen ? (
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    ) : (
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                    )}
+                </button>
+            </div>
+
+            {/* Mobile Overlay */}
+            {sidebarOpen && (
+                <div
+                    className="lg:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+                    onClick={() => setSidebarOpen(false)}
+                />
+            )}
+
+            {/* Sidebar - Fixed on desktop, slide-in on mobile */}
+            <aside className={`
+                fixed h-full z-50 flex flex-col transition-transform duration-300
+                w-56 lg:translate-x-0 bg-[#0d2137] text-white
+                ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+            `}>
+                {/* Logo - Hidden on mobile (shown in header) */}
+                <div className="hidden lg:flex p-5 items-center gap-3 border-b border-white/10">
                     <img src="/logo.png" alt="AnnaData" className="w-9 h-9 object-contain" />
                     <div>
                         <span className="font-bold text-lg block">AnnaData</span>
@@ -68,13 +111,17 @@ export default function AdminLayout() {
                     </div>
                 </div>
 
+                {/* Mobile top spacing */}
+                <div className="lg:hidden h-16" />
+
                 {/* Navigation */}
-                <nav className="flex-1 py-4">
+                <nav className="flex-1 py-4 overflow-y-auto">
                     {navItems.map((item) => (
                         <NavLink
                             key={item.path}
                             to={item.path}
                             end={item.end}
+                            onClick={handleNavClick}
                             className={({ isActive }) =>
                                 `flex items-center gap-3 px-5 py-3 text-sm transition-all ${isActive
                                     ? 'bg-teal-600 text-white border-l-4 border-teal-400'
@@ -100,7 +147,7 @@ export default function AdminLayout() {
                         </div>
                         <div className="space-y-1 mb-4">
                             <p className="text-xl font-bold text-white">{finalDisplayName}</p>
-                            <p className="text-sm text-gray-400">{userData?.email}</p>
+                            <p className="text-sm text-gray-400 truncate max-w-full">{userData?.email}</p>
                         </div>
                         <button
                             onClick={handleLogout}
@@ -113,7 +160,7 @@ export default function AdminLayout() {
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 ml-56">
+            <main className="lg:ml-56 pt-16 lg:pt-0 min-h-screen">
                 <AnimatePresence mode="wait">
                     <motion.div
                         key={location.pathname}

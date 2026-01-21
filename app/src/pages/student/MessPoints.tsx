@@ -311,18 +311,18 @@ export default function MessPoints() {
                 ? 'bg-[#151d17] border border-green-900/30'
                 : 'bg-white border border-gray-200 shadow-sm'
                 }`}>
-                {/* Tab Headers */}
-                <div className={`flex border-b ${theme === 'dark' ? 'border-green-900/30' : 'border-gray-200'
+                {/* Tab Headers - Responsive */}
+                <div className={`flex flex-wrap sm:flex-nowrap border-b ${theme === 'dark' ? 'border-green-900/30' : 'border-gray-200'
                     }`}>
                     {[
-                        { key: 'history', label: 'Transaction History', icon: '📋' },
-                        { key: 'leaderboard', label: 'Leaderboard', icon: '🏅' },
-                        { key: 'rewards', label: 'Redeem Rewards', icon: '🎁' },
+                        { key: 'history', label: 'Transaction History', shortLabel: 'History', icon: '📋' },
+                        { key: 'leaderboard', label: 'Leaderboard', shortLabel: 'Leaders', icon: '🏅' },
+                        { key: 'rewards', label: 'Redeem Rewards', shortLabel: 'Rewards', icon: '🎁' },
                     ].map((tab) => (
                         <button
                             key={tab.key}
                             onClick={() => setActiveTab(tab.key as typeof activeTab)}
-                            className={`flex-1 py-4 px-4 font-medium transition-all flex items-center justify-center gap-2 ${activeTab === tab.key
+                            className={`flex-1 py-3 sm:py-4 px-2 sm:px-4 font-medium transition-all flex items-center justify-center gap-1 sm:gap-2 text-sm sm:text-base ${activeTab === tab.key
                                 ? theme === 'dark'
                                     ? 'text-green-400 border-b-2 border-green-500 bg-green-900/10'
                                     : 'text-green-600 border-b-2 border-green-500 bg-green-50'
@@ -332,7 +332,8 @@ export default function MessPoints() {
                                 }`}
                         >
                             <span>{tab.icon}</span>
-                            <span>{tab.label}</span>
+                            <span className="hidden sm:inline">{tab.label}</span>
+                            <span className="sm:hidden">{tab.shortLabel}</span>
                         </button>
                     ))}
                 </div>

@@ -50,7 +50,7 @@ export default function LiveAttendance() {
             snapshot.docs.forEach((doc) => {
                 const data = doc.data();
                 const mealType = data.mealType as 'breakfast' | 'lunch' | 'dinner';
-                
+
                 if (counts[mealType] !== undefined) {
                     counts[mealType]++;
                 }
@@ -83,10 +83,10 @@ export default function LiveAttendance() {
     }, []);
 
     const formatTime = (date: Date) => {
-        return date.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
+        return date.toLocaleTimeString('en-US', {
+            hour: '2-digit',
             minute: '2-digit',
-            hour12: true 
+            hour12: true
         });
     };
 
@@ -102,8 +102,8 @@ export default function LiveAttendance() {
     return (
         <div className="space-y-4">
             {/* Stats Cards */}
-            <div className="bg-gradient-to-r from-teal-500 to-teal-600 text-white p-5 rounded-lg">
-                <div className="flex items-center justify-between">
+            <div className="bg-gradient-to-r from-teal-500 to-teal-600 text-white p-4 sm:p-5 rounded-lg">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                         <h2 className="text-lg font-semibold mb-1">Today's Attendance</h2>
                         <p className="text-teal-100 text-sm">Students checked in via QR</p>
@@ -112,21 +112,21 @@ export default function LiveAttendance() {
                             <span className="text-xs text-teal-100">Live updates</span>
                         </div>
                     </div>
-                    <div className="flex gap-6">
+                    <div className="flex flex-wrap gap-4 sm:gap-6">
                         <div className="text-center">
-                            <p className="text-3xl font-bold">{isLoading ? '-' : stats.breakfast}</p>
+                            <p className="text-2xl sm:text-3xl font-bold">{isLoading ? '-' : stats.breakfast}</p>
                             <p className="text-xs text-teal-100">Breakfast</p>
                         </div>
                         <div className="text-center">
-                            <p className="text-3xl font-bold">{isLoading ? '-' : stats.lunch}</p>
+                            <p className="text-2xl sm:text-3xl font-bold">{isLoading ? '-' : stats.lunch}</p>
                             <p className="text-xs text-teal-100">Lunch</p>
                         </div>
                         <div className="text-center">
-                            <p className="text-3xl font-bold">{isLoading ? '-' : stats.dinner}</p>
+                            <p className="text-2xl sm:text-3xl font-bold">{isLoading ? '-' : stats.dinner}</p>
                             <p className="text-xs text-teal-100">Dinner</p>
                         </div>
-                        <div className="text-center border-l border-teal-400 pl-6">
-                            <p className="text-3xl font-bold">{isLoading ? '-' : stats.total}</p>
+                        <div className="text-center border-l border-teal-400 pl-4 sm:pl-6">
+                            <p className="text-2xl sm:text-3xl font-bold">{isLoading ? '-' : stats.total}</p>
                             <p className="text-xs text-teal-100">Total</p>
                         </div>
                     </div>
@@ -138,13 +138,13 @@ export default function LiveAttendance() {
                 <div className="p-4 border-b border-gray-100">
                     <h3 className="font-semibold text-gray-900">Recent Check-ins</h3>
                 </div>
-                <div className="max-h-64 overflow-y-auto">
+                <div className="max-h-64 overflow-y-auto overflow-x-auto">
                     {isLoading ? (
                         <div className="p-4 text-center text-gray-400">Loading...</div>
                     ) : recentScans.length === 0 ? (
                         <div className="p-4 text-center text-gray-400">No check-ins yet today</div>
                     ) : (
-                        <table className="w-full">
+                        <table className="w-full min-w-[400px]">
                             <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                                 <tr>
                                     <th className="px-4 py-2 text-left">Student</th>
