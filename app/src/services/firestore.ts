@@ -819,7 +819,9 @@ export async function markMealAttendance(
     scannedBy: string
 ): Promise<{ success: boolean; error?: string; userName?: string; userEmail?: string }> {
     try {
-        const dateStr = date.toISOString().split('T')[0];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const dateStr = formatLocalDate(today);
         const docId = `${userId}_${mealType}_${dateStr}`;
 
         // Check if already scanned for this meal today
@@ -852,12 +854,16 @@ export async function markMealAttendance(
             }
         }
 
+        // Normalize date to midnight local for consistent querying
+        const normalizedDate = new Date(date);
+        normalizedDate.setHours(0, 0, 0, 0);
+
         // Record attendance
         await setDoc(doc(db, 'mealAttendance', docId), {
             userId,
             userName: finalName || 'Unknown',
             userEmail: finalEmail || '',
-            date: Timestamp.fromDate(date),
+            date: Timestamp.fromDate(normalizedDate),
             mealType,
             scannedAt: serverTimestamp(),
             scannedBy,
@@ -1041,7 +1047,7 @@ export async function get7DayAttendance(): Promise<DayAttendanceStats[]> {
         snapshot.docs.forEach(doc => {
             const data = doc.data();
             const date = data.date instanceof Timestamp ? data.date.toDate() : new Date(data.date);
-            const dateStr = date.toISOString().split('T')[0];
+            const dateStr = formatLocalDate(date);
 
             if (!attendanceByDate.has(dateStr)) {
                 attendanceByDate.set(dateStr, { breakfast: 0, lunch: 0, dinner: 0 });
@@ -1395,13 +1401,16 @@ export async function markAttendanceFromStudentScan(
         const { mealType, date } = validation.payload;
         const parsedDate = parseLocalDate(date);
 
-        // TEMPORARILY DISABLED: Check for duplicate attendance today
-        // Will add back later for one-time scanning
-        const docId = `${userId}_${mealType}_${date}`;
-        // const existingDoc = await getDoc(doc(db, 'mealAttendance', docId));
-        // if (existingDoc.exists()) {
-        //     return { success: false, error: 'You have already marked attendance for this meal' };
-        // }
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const dateStr = formatLocalDate(today);
+        const docId = `${userId}_${mealType}_${dateStr}`;
+
+        // Check for duplicate attendance today
+        const existingDoc = await getDoc(doc(db, 'mealAttendance', docId));
+        if (existingDoc.exists()) {
+            return { success: false, error: 'You have already marked attendance for this meal' };
+        }
 
         // Fetch user details if not provided
         let finalName = userName;
@@ -1420,12 +1429,16 @@ export async function markAttendanceFromStudentScan(
             }
         }
 
+        // Normalize date to midnight local
+        const normalizedDate = new Date(parsedDate);
+        normalizedDate.setHours(0, 0, 0, 0);
+
         // Record attendance
         await setDoc(doc(db, 'mealAttendance', docId), {
             userId,
             userName: finalName || 'Unknown Student',
             userEmail: finalEmail || '',
-            date: Timestamp.fromDate(parsedDate),
+            date: Timestamp.fromDate(normalizedDate),
             mealType,
             scannedAt: serverTimestamp(),
             scanType: 'student_scan', // Indicates student scanned admin QR

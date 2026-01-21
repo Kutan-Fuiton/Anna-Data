@@ -35,6 +35,7 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const animationRef = useRef<number | null>(null);
+    const processingRef = useRef(false); // Synchronous flag to prevent race conditions
 
     // Start camera stream
     const startCamera = useCallback(async () => {
@@ -71,7 +72,8 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
 
     // Scan video frame for QR code
     const scanFrame = useCallback(() => {
-        if (!videoRef.current || !canvasRef.current || isProcessing || result) return;
+        // Use ref for synchronous check to prevent race conditions
+        if (!videoRef.current || !canvasRef.current || processingRef.current || isProcessing || result) return;
 
         const video = videoRef.current;
         const canvas = canvasRef.current;
@@ -86,6 +88,13 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
                 const code = jsQR(imageData.data, imageData.width, imageData.height);
                 
                 if (code && code.data) {
+                    // Immediately set ref to prevent any more scans
+                    processingRef.current = true;
+                    // Stop animation loop immediately
+                    if (animationRef.current) {
+                        cancelAnimationFrame(animationRef.current);
+                        animationRef.current = null;
+                    }
                     console.log('[Student] QR detected from live scan');
                     processQRData(code.data);
                     return; // Stop scanning after finding a code
@@ -126,6 +135,7 @@ export default function StudentQRScanner({ isOpen, onClose, expectedMealType }: 
         if (isOpen) {
             setResult(null);
             setIsProcessing(false);
+            processingRef.current = false; // Reset synchronous flag
             setScanMode('live'); // Reset to live mode when opening
             setCameraError(null);
         }

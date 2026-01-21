@@ -44,17 +44,22 @@ export default function AdminOperations() {
     const [mealTimeSettings, setMealTimeSettings] = useState<MealTimeSettings>(DEFAULT_MEAL_TIME_SETTINGS);
     const [isSavingSettings, setIsSavingSettings] = useState(false);
     const [settingsSaved, setSettingsSaved] = useState(false);
+    const [isRefreshingForecast, setIsRefreshingForecast] = useState(false);
+
+    const fetchForecast = async () => {
+        setIsRefreshingForecast(true);
+        try {
+            const data = await get7DayAttendance();
+            setForecast(data);
+        } catch (error) {
+            console.error('Error fetching forecast:', error);
+        } finally {
+            setIsRefreshingForecast(false);
+        }
+    };
 
     // Fetch 7-day attendance forecast
     useEffect(() => {
-        async function fetchForecast() {
-            try {
-                const data = await get7DayAttendance();
-                setForecast(data);
-            } catch (error) {
-                console.error('Error fetching forecast:', error);
-            }
-        }
         fetchForecast();
     }, []);
 
@@ -213,9 +218,30 @@ export default function AdminOperations() {
 
                     {/* Forecast Table */}
                     <div className="bg-white border border-gray-200 p-4 sm:p-5">
-                        <h3 className="font-semibold text-gray-900 mb-4">7-Day Attendance History</h3>
-                        <div className="overflow-x-auto -mx-4 sm:mx-0">
-                            <div className="grid grid-cols-7 gap-2 min-w-[600px]">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-semibold text-gray-900">7-Day Attendance History</h3>
+                            <button
+                                onClick={fetchForecast}
+                                disabled={isRefreshingForecast}
+                                className={`text-xs font-medium flex items-center gap-1.5 px-3 py-1.5 rounded transition-colors ${
+                                    isRefreshingForecast 
+                                        ? 'bg-gray-100 text-gray-400' 
+                                        : 'bg-teal-50 text-teal-600 hover:bg-teal-100'
+                                }`}
+                            >
+                                <svg 
+                                    className={`w-3.5 h-3.5 ${isRefreshingForecast ? 'animate-spin' : ''}`} 
+                                    fill="none" 
+                                    viewBox="0 0 24 24" 
+                                    stroke="currentColor"
+                                >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                {isRefreshingForecast ? 'Refreshing...' : 'Refresh History'}
+                            </button>
+                        </div>
+                        <div className="overflow-x-auto -mx-4 sm:mx-0 pb-2">
+                            <div className="grid grid-cols-7 gap-2 min-w-[650px]">
                                 {forecast.map((day) => {
                                     const isToday = day.displayDate === 'Today';
                                     return (
