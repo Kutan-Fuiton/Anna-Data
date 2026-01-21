@@ -1096,6 +1096,7 @@ export async function get7DayAttendance(): Promise<DayAttendanceStats[]> {
 export interface LeaveRequest {
     id?: string;
     userId: string;
+    userName?: string;
     startDate: Date;
     endDate: Date;
     reason?: string;
@@ -1168,6 +1169,7 @@ export async function getUserLeaves(userId: string): Promise<LeaveRequest[]> {
             return {
                 id: doc.id,
                 userId: data.userId,
+                userName: data.userName || 'Unknown',
                 startDate: parseLocalDate(data.startDate),
                 endDate: parseLocalDate(data.endDate),
                 reason: data.reason,
@@ -1232,6 +1234,7 @@ export async function getUpcomingLeaves(userId: string): Promise<LeaveRequest[]>
             return {
                 id: doc.id,
                 userId: data.userId,
+                userName: data.userName || 'Unknown',
                 startDate: parseLocalDate(data.startDate),
                 endDate: parseLocalDate(data.endDate),
                 reason: data.reason,

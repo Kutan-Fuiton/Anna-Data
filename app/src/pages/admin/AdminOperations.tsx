@@ -98,7 +98,7 @@ export default function AdminOperations() {
                         }
 
                         // Get userName from the leave data (stored as reason or name field)
-                        const studentName = (leave as unknown as { userName?: string }).userName || 'Unknown';
+                        const studentName = leave.userName || 'Unknown';
 
                         return {
                             id: leave.id!,
