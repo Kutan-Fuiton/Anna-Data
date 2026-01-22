@@ -234,10 +234,19 @@ async def load_model():
         raise e
 
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
+    return {"status": "ok", "message": "Mess-O-Meter Food Waste Analysis API is running"}
+
+
 @app.get("/")
 async def root():
-    """Health check endpoint."""
-    return {"status": "ok", "message": "Mess-O-Meter Food Waste Analysis API is running"}
+    """Serve frontend at root URL, fallback to health check if no frontend."""
+    frontend_index = Path(__file__).parent / "app" / "dist" / "index.html"
+    if frontend_index.exists():
+        return FileResponse(str(frontend_index), media_type="text/html")
+    return {"status": "ok", "message": "Mess-O-Meter API is running. Frontend not built."}
 
 
 @app.post("/analyze")
