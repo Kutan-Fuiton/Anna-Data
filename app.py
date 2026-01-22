@@ -241,11 +241,8 @@ async def health_check():
 
 @app.get("/")
 async def root():
-    """Serve frontend at root URL, fallback to health check if no frontend."""
-    frontend_index = Path(__file__).parent / "app" / "dist" / "index.html"
-    if frontend_index.exists():
-        return FileResponse(str(frontend_index), media_type="text/html")
-    return {"status": "ok", "message": "Mess-O-Meter API is running. Frontend not built."}
+    """API root - returns health status."""
+    return {"status": "ok", "message": "Mess-O-Meter Food Waste Analysis API is running"}
 
 
 @app.post("/analyze")
