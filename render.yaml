@@ -18,7 +18,7 @@ services:
     name: mess-o-meter-web
     env: static
     buildCommand: cd app && npm install && npm run build
-    staticPublishPath: app/dist
+    publishDirectory: dist
     envVars:
       - key: VITE_FIREBASE_API_KEY
         value: AIzaSyDpdZXYiQihEabOohlLldGfG23I_QN7Ap8
