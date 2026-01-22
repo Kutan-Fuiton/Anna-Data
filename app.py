@@ -38,6 +38,40 @@ app.add_middleware(
 # Initialize detector once at startup
 detector = None
 
+# Global Firestore client
+db = None
+
+def get_firestore_client():
+    """Get or initialize a global Firestore client."""
+    global db
+    if db is None:
+        from google.cloud import firestore
+        import os
+        
+        # Priority 1: GOOGLE_APPLICATION_CREDENTIALS env var (Best for Render)
+        if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+            db = firestore.Client()
+        else:
+            # Priority 2: Look for file in root or mess-o-meter-backend
+            paths = [
+                Path(__file__).parent / "serviceAccountKey.json",
+                Path(__file__).parent / "mess-o-meter-backend" / "serviceAccountKey.json",
+                Path("/etc/secrets/service-account.json"), # common Render secret path
+                Path("/etc/secrets/serviceAccountKey.json")
+            ]
+            
+            for p in paths:
+                if p.exists():
+                    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(p)
+                    db = firestore.Client()
+                    break
+        
+        if db is None:
+            print("⚠️ Warning: Firestore client not initialized - no credentials found")
+            
+    return db
+
+
 
 # ============== Helper Functions ==============
 
@@ -585,18 +619,10 @@ async def generate_qr(request: QRGenerateRequest):
         raise HTTPException(status_code=400, detail="Invalid meal_type. Must be breakfast, lunch, or dinner.")
     
     try:
-        from google.cloud import firestore
-        import os
-        
-        # Initialize Firestore
-        service_key_path = Path(__file__).parent / "serviceAccountKey.json"
-        if not service_key_path.exists():
-            service_key_path = Path(__file__).parent / "mess-o-meter-backend" / "serviceAccountKey.json"
+        db = get_firestore_client()
+        if db is None:
+            return QRResponse(success=False, error="Database connection failed")
             
-        if service_key_path.exists():
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(service_key_path)
-        
-        db = firestore.Client()
         date_str = get_today_date_str()
         doc_id = f"{meal_type}_{date_str}"
         doc_ref = db.collection("adminAttendanceQR").document(doc_id)
@@ -650,18 +676,10 @@ async def get_qr(meal_type: str):
         raise HTTPException(status_code=400, detail="Invalid meal_type.")
     
     try:
-        from google.cloud import firestore
-        import os
-        
-        # Initialize Firestore
-        service_key_path = Path(__file__).parent / "serviceAccountKey.json"
-        if not service_key_path.exists():
-            service_key_path = Path(__file__).parent / "mess-o-meter-backend" / "serviceAccountKey.json"
+        db = get_firestore_client()
+        if db is None:
+            return QRResponse(success=False, error="Database connection failed")
             
-        if service_key_path.exists():
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(service_key_path)
-        
-        db = firestore.Client()
         date_str = get_today_date_str()
         doc_id = f"{meal_type}_{date_str}"
         doc_ref = db.collection("adminAttendanceQR").document(doc_id)
