@@ -1,5 +1,5 @@
 services:
-  # Backend API (FastAPI)
+  # Main Backend API (FastAPI) - Food Detection & Analysis
   - type: web
     name: mess-o-meter-api
     env: python
@@ -21,10 +21,7 @@ services:
     staticPublishPath: app/dist
     envVars:
       - key: VITE_API_URL
-        fromService:
-          name: mess-o-meter-api
-          type: web
-          property: host
+        value: https://anna-data.onrender.com
     routes:
       - type: rewrite
         source: /*

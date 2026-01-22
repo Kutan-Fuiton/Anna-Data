@@ -3,9 +3,9 @@
  * Global Configuration for the application
  */
 
-// Use environment variable for API URL, fallback to localhost for development
+// Use environment variable for API URL, fallback to production backend
 // Strip trailing slash if present to avoid double slashes in endpoints
-export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'https://anna-data.onrender.com').replace(/\/$/, '');
 
 export const CONFIG = {
     API_BASE_URL,
