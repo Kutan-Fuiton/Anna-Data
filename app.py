@@ -741,9 +741,23 @@ if FRONTEND_BUILD_DIR.exists():
     @app.get("/{full_path:path}")
     async def serve_spa(request: Request, full_path: str):
         """Serve the React SPA for all non-API routes."""
-        # Don't serve index.html for API routes
-        if full_path.startswith(("analyze", "generate", "qr", "health", "docs", "openapi", "redoc")):
-            raise HTTPException(status_code=404, detail="API endpoint not found")
+        # Don't serve index.html for API routes or static assets
+        # The /assets mount should handle those, but exclude them here as a safeguard
+        excluded_prefixes = (
+            "assets",      # Static JS/CSS files
+            "analyze",     # API endpoints
+            "generate", 
+            "qr", 
+            "health", 
+            "docs", 
+            "openapi", 
+            "redoc",
+            "logo.png",    # Static files
+            "vite.svg",
+            "favicon",
+        )
+        if full_path.startswith(excluded_prefixes) or full_path in excluded_prefixes:
+            raise HTTPException(status_code=404, detail="Not found")
         
         index_path = FRONTEND_BUILD_DIR / "index.html"
         if index_path.exists():
