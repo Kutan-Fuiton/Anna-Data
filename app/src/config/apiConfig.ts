@@ -1,12 +1,13 @@
 
 /**
  * Global Configuration for the application
+ * 
+ * Frontend: Vercel
+ * Backend: Render
  */
 
-// Use environment variable for API URL
-// Empty string = relative URLs (same-origin deployment)
-// Full URL = separate frontend/backend servers
-export const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+// Use environment variable for API URL, fallback to Render backend
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'https://anna-data-j7mt.onrender.com').replace(/\/$/, '');
 
 export const CONFIG = {
     API_BASE_URL,

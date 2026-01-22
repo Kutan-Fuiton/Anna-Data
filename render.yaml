@@ -1,18 +1,14 @@
 services:
-  # Single Service: Backend + Frontend (Monolithic Deployment)
+  # Backend API Only (Python/FastAPI)
   - type: web
     name: anna-data
     runtime: python
-    buildCommand: |
-      pip install -r requirements.txt
-      cd app && npm install && npm run build
+    buildCommand: pip install -r requirements.txt
     startCommand: gunicorn -w 1 -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORT
     envVars:
       - key: GEMINI_API_KEY
         sync: false
       - key: PYTHON_VERSION
         value: "3.10.0"
-      - key: NODE_VERSION
-        value: "18"
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/service-account.json
