@@ -22,7 +22,7 @@ class GeminiInsightGenerator:
             print("⚠️ Gemini API key not configured. AI insights will be disabled.")
         else:
             genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel("gemini-2.0-flash-exp")
+            self.model = genai.GenerativeModel("gemini-3-flash-preview")
             self.enabled = True
             print("[OK] Gemini AI service initialized successfully")
     

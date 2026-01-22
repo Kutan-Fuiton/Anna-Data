@@ -20,16 +20,16 @@ service cloud.firestore {
     // ---------- MEAL INTENTS ----------
     match /mealIntents/{id} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow delete: if false;
     }
 
     // ---------- MEAL ATTENDANCE ----------
     match /mealAttendance/{id} {
       allow read: if isSignedIn();
-      // Changed: Allow any authenticated user to create/update for demo
-      allow create, update: if isSignedIn();
+      // Allow any authenticated user to create/update
+      allow create, update: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow delete: if isAdmin();
     }
 
@@ -84,6 +84,12 @@ service cloud.firestore {
     match /messPoints/{id} {
       allow read: if isSignedIn();
       allow create, update, delete: if isAdmin();
+    }
+
+    // ---------- MEAL TIME SETTINGS ----------
+    match /mealTimeSettings/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }
