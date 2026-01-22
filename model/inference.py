@@ -72,6 +72,14 @@ class FoodDetector:
         self.model = YOLO(model_path)
         print("✓ Model loaded successfully")
     
+    def _has_gpu(self) -> bool:
+        """Check if GPU is available."""
+        try:
+            import torch
+            return torch.cuda.is_available()
+        except:
+            return False
+    
     def preprocess_image(self, image: np.ndarray) -> np.ndarray:
         """
         Preprocess raw image for inference.
@@ -131,12 +139,13 @@ class FoodDetector:
         # Preprocess
         processed = self.preprocess_image(image)
         
-        # Run inference - reduce imgsz to 320 for speed on Render CPU
+        # Run inference - reduce imgsz to 256 for speed on Render CPU
         results = self.model.predict(
             source=processed,
-            imgsz=320,
+            imgsz=256,
             conf=self.confidence,
-            verbose=False
+            verbose=False,
+            device=0 if self._has_gpu() else "cpu"
         )[0]
         
         # Parse results

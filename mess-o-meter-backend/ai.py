@@ -19,7 +19,7 @@ DATA:
 """
 
     response = client.models.generate_content(
-        model="gemini-3-flash-preview",
+        model="gemini-1.5-flash",
         contents=prompt
     )
 

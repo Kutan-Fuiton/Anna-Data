@@ -1,6 +1,6 @@
 """
 Gemini AI Service for Human-Friendly Food Waste Insights
-Uses Google Gemini 2.0 Flash to generate natural, engaging messages.
+Uses Google Gemini 1.5 Flash to generate natural, engaging messages.
 """
 
 import os
@@ -22,7 +22,8 @@ class GeminiInsightGenerator:
             print("⚠️ Gemini API key not configured. AI insights will be disabled.")
         else:
             genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel("gemini-3-flash-preview")
+            # Using stable model - gemini-1.5-flash is production-ready
+            self.model = genai.GenerativeModel("gemini-1.5-flash")
             self.enabled = True
             print("[OK] Gemini AI service initialized successfully")
     
@@ -100,7 +101,10 @@ Respond with ONLY the report, no extra headers or text."""
             response = await self.model.generate_content_async(content)
             return response.text.strip()
         except Exception as e:
-            print(f"⚠️ Gemini user insight failed: {e}")
+            import traceback
+            print(f"❌ CRITICAL: Gemini user insight failed!")
+            print(f"Error: {type(e).__name__}: {str(e)}")
+            traceback.print_exc()
             return None
 
     async def generate_admin_insight(self, analysis: Dict, food_counts: Dict, image_bytes: Optional[bytes] = None) -> Optional[str]:
@@ -120,7 +124,10 @@ Respond with ONLY the report, no extra headers or text."""
             response = await self.model.generate_content_async(content)
             return response.text.strip()
         except Exception as e:
-            print(f"⚠️ Gemini admin insight failed: {e}")
+            import traceback
+            print(f"❌ CRITICAL: Gemini admin insight failed!")
+            print(f"Error: {type(e).__name__}: {str(e)}")
+            traceback.print_exc()
             return None
 
     def generate_user_insight_sync(self, analysis: Dict, food_counts: Dict) -> Optional[str]:
