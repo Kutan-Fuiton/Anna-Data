@@ -4,7 +4,8 @@
  */
 
 // Use environment variable for API URL, fallback to localhost for development
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Strip trailing slash if present to avoid double slashes in endpoints
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 export const CONFIG = {
     API_BASE_URL,

@@ -131,9 +131,10 @@ class FoodDetector:
         # Preprocess
         processed = self.preprocess_image(image)
         
-        # Run inference
+        # Run inference - reduce imgsz to 320 for speed on Render CPU
         results = self.model.predict(
             source=processed,
+            imgsz=320,
             conf=self.confidence,
             verbose=False
         )[0]
