@@ -3,8 +3,9 @@ FastAPI Server for Food Detection & Waste Analysis
 Upload an image to detect food items, analyze leftovers, and get AI insights.
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
@@ -702,11 +703,51 @@ async def get_qr(meal_type: str):
     except Exception as e:
         return QRResponse(success=False, error=str(e))
 
+# ============== Static File Serving for Single URL Deployment ==============
+
+# Path to the frontend build directory
+FRONTEND_BUILD_DIR = Path(__file__).parent / "app" / "dist"
+
+# Only mount static files if the build directory exists
+if FRONTEND_BUILD_DIR.exists():
+    # Mount static assets (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_BUILD_DIR / "assets")), name="static_assets")
+    
+    # Serve other static files from the root
+    @app.get("/logo.png")
+    async def serve_logo():
+        logo_path = FRONTEND_BUILD_DIR / "logo.png"
+        if logo_path.exists():
+            return FileResponse(str(logo_path))
+        raise HTTPException(status_code=404)
+    
+    @app.get("/vite.svg")
+    async def serve_vite_svg():
+        svg_path = FRONTEND_BUILD_DIR / "vite.svg"
+        if svg_path.exists():
+            return FileResponse(str(svg_path))
+        raise HTTPException(status_code=404)
+    
+    # Catch-all route for SPA - must be LAST
+    @app.get("/{full_path:path}")
+    async def serve_spa(request: Request, full_path: str):
+        """Serve the React SPA for all non-API routes."""
+        # Don't serve index.html for API routes
+        if full_path.startswith(("analyze", "generate", "qr", "health", "docs", "openapi", "redoc")):
+            raise HTTPException(status_code=404, detail="API endpoint not found")
+        
+        index_path = FRONTEND_BUILD_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(str(index_path), media_type="text/html")
+        raise HTTPException(status_code=404, detail="Frontend not built")
+    
+    print(f"[OK] Serving frontend from {FRONTEND_BUILD_DIR}")
+else:
+    print(f"⚠️ Frontend build not found at {FRONTEND_BUILD_DIR}. Run 'cd app && npm run build' first.")
+
 
 if __name__ == "__main__":
     import uvicorn
     import os
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
-
