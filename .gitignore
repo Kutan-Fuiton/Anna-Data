@@ -24,11 +24,7 @@ venv/
 .env.*.local
 .env.template
 
-# ----- Datasets (large files) -----
-Food_Dataset/
 
-# ----- Model Training Artifacts -----
-model/data/
 
 # ----- IDE / Editor -----
 .idea/
