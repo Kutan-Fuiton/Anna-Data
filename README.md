@@ -25,6 +25,26 @@
 
 > 👆 Click the image above to watch the full demo on YouTube
 
+
+## 🚀 Test It Out
+
+You can try the deployed version of the project using the links and test credentials below.
+
+### 🔗 Deployed Links
+- **Frontend:** https://anna-data-7854.onrender.com/  
+- **Backend API:** https://anna-data.onrender.com  
+
+---
+
+### 🔐 Test Credentials
+
+| Role    | User ID                         | Password |
+|---------|----------------------------------|----------|
+| Student | aritra@gmail.com                | 123456   |
+| Admin   | subhajit.das.1768@gmail.com     | 123456   |
+
+---
+
 ### Key Features
 
 | Feature | Description |
@@ -249,5 +269,6 @@ This project is licensed under the MIT License.
 <p align="center">
   Made with ❤️ for reducing food waste in India
 </p>
+
 
 
