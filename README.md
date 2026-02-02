@@ -14,6 +14,11 @@
 
 **AnnaData** is a full-stack solution that combines **Computer Vision** and **Generative AI** to tackle food waste in hostel mess facilities. Students can provide meal feedback and upload plate photos, which are analyzed by AI to quantify waste levels and generate actionable insights for administrators.
 
+🔗 **Live Demo:** [anna-data.in](https://anna-data-7854.onrender.com/)
+🔗 **Backend:** [Running @](https://anna-data.onrender.com)
+
+---
+
 ### 🎬 Video Walkthrough
 
 [![AnnaData Demo](https://img.youtube.com/vi/t8gW-YC3Egk/maxresdefault.jpg)](https://youtu.be/t8gW-YC3Egk?si=Ejs16ebPzwhPzWEr)
@@ -244,4 +249,5 @@ This project is licensed under the MIT License.
 <p align="center">
   Made with ❤️ for reducing food waste in India
 </p>
+
 
